@@ -26,4 +26,12 @@ compare e.g.:
 
 ![lissajous2](doc/53_57_83.png)
 
-(approximating rational number by another rational number with denominator comprime to the original denominator)
+## Approximating rational numbers
+
+by different rational numbers with denominator coprime to the original denominator
+
+### 7/11
+![approx_7_11](doc/approx_7_11.png)
+
+### 7/11 errors
+![approx_7_11_err](doc/approx_7_11_err.png)
