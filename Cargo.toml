@@ -1,0 +1,13 @@
+[package]
+name = "egypt"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+num-bigint = "0.4.3"
+num-traits = "0.2.15"
+num-integer = "0.1.45"
+
+[profile.release]
+panic = "abort"
+opt-level = 3
