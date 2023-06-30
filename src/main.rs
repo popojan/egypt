@@ -1,6 +1,6 @@
 use num_bigint::BigInt;
 use num_traits::identities::One;
-use std::ops::{Add, Sub, Div, Mul, AddAssign};
+use std::ops::{Add, Sub, Div, Mul};
 use std::env;
 use std::str::FromStr;
 use num_integer::Integer;
@@ -12,10 +12,7 @@ fn low(x: &BigInt, y: &BigInt) -> (BigInt, BigInt) {
         x.extended_gcd(&y).x.add(y).mod_floor(&y)
     };
     let m = x.clone().mul(&b);
-    let mut a = m.clone().div(y);
-    if m.sub(a.clone().mul(y)).gt(&y.clone().div(&BigInt::from(2_u32))) {
-        a.add_assign(&BigInt::one());
-    }
+    let a = m.clone().div(y);
     let gcd = a.gcd(&b);
     return (a.div(&gcd), b.div(&gcd))
 }
