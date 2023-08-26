@@ -3,7 +3,6 @@
 with small denominators
 
 * largest denominator factor not greater than original denominator
-* minimizes sum of denominator factors?
 * compare to Wolfram Alpha: https://www.wolframalpha.com/input?i=egyptian+fraction+2023%2F2024
 
 compare e.g.:
