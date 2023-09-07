@@ -57,7 +57,55 @@ void sqrt3(fmpq_t out, fmpq_t err_inv, fmpz_t x, fmpz_t y, int n, int debug) {
     fmpz_clear(b);
     fmpz_clear(d);
 }
+void sqrt3_rec(fmpq_t out, fmpq_t err_inv, fmpz_t x, fmpz_t y, int n, int debug) {
+    fmpq_t a, b, c, d;
+    fmpq_init(a);
+    fmpq_init(c);
+    fmpq_init(d);
+    fmpq_one(c);
+    fmpz_t one;
+    fmpz_init(one);
+    fmpq_init(b);
+    fmpq_zero(a);
+    fmpq_set_fmpz(b, x);
+    fmpq_set_fmpz(c, x);
+    fmpq_add_ui(c, c, 1);
+    fmpq_div(c, b, c);
+    fmpq_add(a, a, b);
+    fmpq_add(a, a, c);
+    if(debug) {
+        fmpq_set_fmpz_frac(d, x, y);
+        fmpq_canonicalise(d);
+        fmpz_print(fmpq_numerator_ptr(d));
+        flint_printf("\t");
+        fmpz_print(fmpq_denominator_ptr(d));
+        flint_printf("\n");
+        flint_printf("*\n1\t1\n");
+    }
+    for(ulong i = 2; i <= n; ++i) {
+        // a(k+1) = a(k)^2 / (a(k-1)*(1 + a(k)))
+        fmpq_add_ui(d, c, 1);
+        fmpq_mul(d, d, b);
+        fmpq_swap(b, c);
+        fmpq_mul(c, b, b);
+        fmpq_div(c, c, d);
+        fmpq_add(a, a, c);
+        if(debug) {
+            flint_printf("1\t");
+            fmpz_print(fmpq_denominator_ptr(c));
+            flint_printf("\n");
+        }
+    }
+    fmpq_inv(err_inv, c);
+    fmpq_mul_fmpz(err_inv, err_inv, y);
+    fmpq_div_fmpz(out, a, y);
 
+    fmpq_clear(a);
+    fmpq_clear(c);
+    fmpz_clear(one);
+    fmpq_clear(b);
+    fmpq_clear(d);
+}
 //courtesy of Pim Spelier: https://github.com/pimsp/PWS_chakravala
 void pell(fmpz_t a_out, fmpz_t b_out, fmpz_t d) {
     fmpz_t a, b, k, m_0, m_1, p_1, m_2, p_2, m, tmp;
@@ -190,10 +238,11 @@ int main(int argc, char *argv[])
     int n = 10;
     if (argc > 2) {
         n = atol(argv[2]);
+        if(n < 2) n = 2;
     }
     pell(x, y, x0i);
     fmpz_sub_ui(x, x, 1);
-    sqrt3(xx, err, x, y, n, 1);
+    sqrt3_rec(xx, err, x, y, n, 1);
 
     int rep = 1;
     if(argc > 3) {
@@ -202,13 +251,14 @@ int main(int argc, char *argv[])
     if(rep < 1) {
         return 0;
     }
+
     struct timespec start, end;
     clock_gettime(CLOCK_MONOTONIC_RAW, &start);
 
     for(ulong i = 0; i< rep; ++i) {
         pell(x, y, x0i);
         fmpz_sub_ui(x, x, 1);
-        sqrt3(xx, err, x, y, n, 0);
+        sqrt3_rec(xx, err, x, y, n, 0);
     }
     clock_gettime(CLOCK_MONOTONIC_RAW, &end);
 
@@ -244,6 +294,7 @@ int main(int argc, char *argv[])
     arb_log_ui(tmp, 2, LOW_PREC);
     arb_div(a, a, tmp, LOW_PREC);
     long bin_prec = (long)(arf_get_d(arb_midref(a),0))+1;
+    if (bin_prec < 2) bin_prec = 2;
     if (prec < 2) prec = 2;
     arb_set_fmpq(a, xx, bin_prec);
 
