@@ -4,9 +4,10 @@ version = "0.0.1"
 edition = "2021"
 
 [dependencies]
-num-bigint = "0.4.3"
-num-traits = "0.2.15"
-num-integer = "0.1.45"
+num-bigint = "0.4.4"
+num-traits = "0.2.18"
+num-integer = "0.1.46"
+clap = { version = "4.5.1", features = ["derive"] }
 
 [profile.release]
 panic = "abort"

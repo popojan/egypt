@@ -1,9 +1,40 @@
+use std::io;
 use num_bigint::BigInt;
 use num_traits::identities::One;
 use std::ops::{Add, Sub, Div, Mul};
-use std::env;
-use std::str::FromStr;
 use num_integer::Integer;
+use clap::Parser;
+use std::str::FromStr;
+use num_traits::Zero;
+
+/// Egyptian Fractions
+
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
+#[command(arg_required_else_help(true))]
+struct Args {
+    /// Reverse merge strategy
+    #[clap(short, long, value_parser, default_value_t = false)]
+    reverse: bool,
+
+    /// Do not merge
+    #[clap(long, value_parser, default_value_t = false)]
+    raw: bool,
+
+    /// No output
+    #[clap(short, long, value_parser, default_value_t = false)]
+    silent: bool,
+
+    /// Batch mode (expects numerator and denominator on each line of standard input)
+    #[clap(long, value_parser, default_value_t = false)]
+    batch: bool,
+
+    #[clap(value_parser, default_value_t = BigInt::from(1))]
+    numerator: BigInt,
+
+    #[clap(value_parser, default_value_t = BigInt::from(1))]
+    denominator: BigInt,
+}
 
 fn low(x: &BigInt, y: &BigInt) -> (BigInt, BigInt) {
     let b = if y.sub(x).eq(&BigInt::one()) {
@@ -17,7 +48,7 @@ fn low(x: &BigInt, y: &BigInt) -> (BigInt, BigInt) {
     return (a.div(&gcd), b.div(&gcd))
 }
 
-fn as_egyptian_fraction_raw(x0: &BigInt, y0: &BigInt) -> Vec<(BigInt, BigInt)> {
+fn as_egyptian_fraction_raw(x0: &BigInt, y0: &BigInt, _reverse: bool) -> Vec<(BigInt, BigInt)> {
     let mut whole = Vec::<(BigInt, BigInt)>::new();
     let mut ret = Vec::<(BigInt, BigInt)>::new();
     let mut x = x0.clone();
@@ -33,7 +64,9 @@ fn as_egyptian_fraction_raw(x0: &BigInt, y0: &BigInt) -> Vec<(BigInt, BigInt)> {
         ret.push((a.div(&gcd), b.div(&gcd)));
         (x, y) = (x2, y2);
     }
-    ret.extend(vec![(x.clone(), y.clone())]);
+    if !x.is_zero() {
+        ret.extend(vec![(x.clone(), y.clone())]);
+    }
     ret.extend(whole);
     ret.reverse();
     ret
@@ -58,35 +91,64 @@ fn merge(eg: &Vec<(BigInt, BigInt)>) -> Vec<(BigInt, BigInt)> {
         ret.push((x.clone(), y.clone()));
         i = j + 1;
     }
+    ret.sort_by(|x, y| { x.1.cmp(&y.1)});
     return ret
 }
 
-fn as_egyptian_fraction(x0: &BigInt, y0: &BigInt) -> Vec<(BigInt, BigInt)> {
-    merge(&as_egyptian_fraction_raw(x0, y0))
+fn as_egyptian_fraction(x0: &BigInt, y0: &BigInt, reverse: bool) -> Vec<(BigInt, BigInt)> {
+    let mut eg = as_egyptian_fraction_raw(x0, y0, reverse);
+    if !reverse {
+        eg.reverse();
+    }
+    merge(&eg)
 }
 
 /// Converts rational numbers to egyptian fractions
-/// featuring quite small denominators compared to competing algorithms
-/// Largest factor of any denominator is not greater than the original denominator
 
 fn main() {
-    let mut num = BigInt::from(7_u32);
-    let mut den = BigInt::from(11_u32);
+    let args = Args::parse();
 
-    if env::args().len() < 3 {
-        println!("Usage: ./egypt <numerator> <denominator>");
-        return;
-    }
-    for (i, arg) in env::args().enumerate() {
-        if i == 1 {
-            num = BigInt::from_str(&arg).unwrap();
+    let f_egypt = if args.raw {
+        as_egyptian_fraction_raw
+    } else {
+        as_egyptian_fraction
+    };
+
+    if args.batch {
+        for line in io::stdin().lines() {
+            if let Ok(line) = line {
+                let num_den = line.split_ascii_whitespace().take(2).collect::<Vec<&str>>();
+                let num = BigInt::from_str(num_den[0]).unwrap();
+                let den = BigInt::from_str(num_den[1]).unwrap();
+                if !args.silent {
+                    let mut gt0 = false;
+                    print!("{}\t{}\t", num.to_str_radix(10), den.to_str_radix(10));
+                    for (i, (a, b)) in f_egypt(&num, &den, args.reverse).iter().enumerate() {
+                        if i == 0 && b.is_one() {
+                            print!("{}\t", a);
+                            gt0 = true;
+                        } else if i == 0 {
+                            print!("0\t{}", b);
+                        } else if i == 1 && gt0 {
+                            print!("{}", b);
+                        } else {
+                            print!(" {}", b);
+                        }
+                    }
+                    print!("\n");
+                }
+            }
         }
-        if i == 2 {
-            den = BigInt::from_str(&arg).unwrap();
+    } else {
+        for (a, b)
+            in f_egypt(
+                &args.numerator,
+                &args.denominator,
+                args.reverse).iter() {
+            if !args.silent {
+                println!("{:?}\t{:?}", a, b);
+            }
         }
-    }
-    for (a, b) in as_egyptian_fraction(&num, &den).iter() {
-        println!("{:?}\t{:?}", a, b);
     }
     return;
 }

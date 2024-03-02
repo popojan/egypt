@@ -14,7 +14,8 @@ compare e.g.:
 
 ```
 2023/2024 == 1/2 + 1/3 + 1/7 + 1/43 + 1/16768 + 1/766160103 + 1/978335504948790912   (wolfram alpha)
-2023/2024 == 1/2 + 1/3 + 1/7 + 1/43 + 1/18447 + 1/184184                             (this algorithm)
+2023/2024 == 1/2 + 1/3 + 1/8 + 1/33 + 1/92                                           (this algorithm)
+2023/2024 == 1/2 + 1/3 + 1/7 + 1/43 + 1/18447 + 1/184184                             (this algorithm --reverse)
 ```
 
 * based on Lissajous Curves: https://mathworld.wolfram.com/LissajousCurve.html
