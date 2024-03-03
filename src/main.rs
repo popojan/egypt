@@ -69,7 +69,7 @@ fn as_egyptian_fraction_raw(x0: &BigInt, y0: &BigInt, _reverse: bool) -> Vec<(Bi
         ret.extend(vec![(x.clone(), y.clone())]);
     }
     ret.extend(whole);
-    ret.reverse();
+    ret.sort();
     ret
 }
 
