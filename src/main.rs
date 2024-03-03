@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::io;
 use num_bigint::BigInt;
 use num_traits::identities::One;
@@ -74,7 +75,8 @@ fn as_egyptian_fraction_raw(x0: &BigInt, y0: &BigInt, _reverse: bool) -> Vec<(Bi
 
 fn merge(eg: &Vec<(BigInt, BigInt)>) -> Vec<(BigInt, BigInt)> {
     let mut i = 0_usize;
-    let mut ret = Vec::<(BigInt, BigInt)>::new();
+    let mut ret = HashSet::<(BigInt, BigInt)>::new();
+    let egs = HashSet::<(BigInt, BigInt)>::from_iter(eg.clone().into_iter());
     while i < eg.len() {
         let (mut x, mut y) = eg[i].clone();
         let mut ones = vec![(i, x.clone(), y.clone())];
@@ -83,16 +85,21 @@ fn merge(eg: &Vec<(BigInt, BigInt)>) -> Vec<(BigInt, BigInt)> {
             (x, y) = (x.mul(y2).add(x2.mul(y.clone())), y.clone().mul(y2));
             let gcd = x.gcd(&y);
             (x, y) = (x.div(&gcd), y.div(&gcd));
-            if x.eq(&BigInt::one()) {
+            let tup = (x.clone(), y.clone());
+            if x.eq(&BigInt::one()) && !ret.contains(&tup)
+                && !egs.contains(&tup)
+            {
                 ones.push((j, x.clone(), y.clone()));
             }
         }
         let (j, x, y) = ones.last().unwrap();
-        ret.push((x.clone(), y.clone()));
+        ret.insert((x.clone(), y.clone()));
         i = j + 1;
     }
+    let mut ret = ret
+        .into_iter().collect::<Vec<(BigInt, BigInt)>>();
     ret.sort_by(|x, y| { x.1.cmp(&y.1)});
-    return ret
+    ret
 }
 
 fn as_egyptian_fraction(x0: &BigInt, y0: &BigInt, reverse: bool) -> Vec<(BigInt, BigInt)> {
