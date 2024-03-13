@@ -4,6 +4,8 @@ BeginPackage["Egypt`"]
 
 EgyptianFractions::usage = "EgyptianFractions[ q] converts a rational number to an egyptian fractions representation"
 
+EgyptianSqrtApproximate::usage = "EgyptianSqrtApproximate[ n] approximates a square root by a rational number using egyptian fractions"
+
 k;
 
 Begin["Private`"]
@@ -137,9 +139,40 @@ EgyptianFractions[q_Rational, OptionsPattern[]] :=
 
 Options[EgyptianFractions] = {Method -> "Classical", MaxItems -> 8}
 
+term[x_, j_] :=
+    1 / (1 + Sum[2 ^ (i - 1) x^i Factorial[j + i] / Factorial[j - i] 
+        / Factorial[2 i], {i, 1, j}])
+
+sqrtt[x_, n_] :=
+    1 + Sum[term[x, j], {j, 1, n}]
+
+sqrth[x_, n_] :=
+    1 + Sum[HoldForm[#]& @ term[x, j], {j, 1, n}]
+
+sqrtl[x_, n_] :=
+    [{1}, Table[term[x, j], {j, 1, n}]]
+
+pellsol[n_, c_] :=
+    Normal @ First @ Solve[x^2 - n y^2 == 1, {x, y}, PositiveIntegers
+        ] /. C[1] -> c
+
+EgyptianSqrtApproximate[n_, OptionsPattern[]] :=
+    Module[{sol, acc = OptionValue[Accuracy]},
+        sol = pellsol[n, 1];
+        Switch[OptionValue[Method],
+            "List",
+                {(x - 1) / y, sqrtl[x - 1, acc]} /. sol
+            ,
+            "Rational",
+                (x - 1) / y sqrtt[x - 1, acc] /. sol
+            ,
+            "Expression",
+                (x - 1) / y sqrth[x - 1, acc] /. sol
+        ]
+    ]
+
+Options[EgyptianSqrtApproximate] = {Method -> "List", Accuracy -> 8}
+
 End[]
 
 EndPackage[]
-
-
-
