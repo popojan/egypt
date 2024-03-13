@@ -1,24 +1,91 @@
 # Egyptian Fractions
 
-with small denominators
+* small denominators: largest denominator factor not greater than original denominator
+* suitable for large inputs
 
-* largest denominator factor not greater than original denominator
-* compare to Wolfram Alpha: https://www.wolframalpha.com/input?i=egyptian+fraction+2023%2F2024
-
-compare e.g.:
+## Usage:
 
 ```
-7/19 == 1/3 + 1/29 + 1/1653   (wolfram alpha)
-7/19 == 1/3 + 1/33 + 1/209    (this algorithm)
+Egyptian Fractions
+
+Usage: egypt [OPTIONS] [NUMERATOR] [DENOMINATOR]
+
+Arguments:
+  [NUMERATOR]    [default: 1]
+  [DENOMINATOR]  [default: 1]
+
+Options:
+  -r, --reverse        Reverse merge strategy
+  -m, --merge          Extra merge step with quadratic complexity possibly reducing number of terms
+      --raw            Output minimal number of raw quadruplets (aka symbolic sums)
+  -s, --silent         No output
+      --batch          Batch mode (expects numerator and denominator on each line of standard input)
+  -l, --limit <LIMIT>  Maximum number of terms for breaking large symbolic sums [default: 2]
+  -h, --help           Print help
+  -V, --version        Print version
+```
+
+
+```
+$ time ./egypt -s 162259276829213363391578010288127 170141183460469231731687303715884105727
+
+real    0m0.003s
+user    0m0.002s
+sys     0m0.001s
 ```
 
 ```
-2023/2024 == 1/2 + 1/3 + 1/7 + 1/43 + 1/16768 + 1/766160103 + 1/978335504948790912   (wolfram alpha)
-2023/2024 == 1/2 + 1/3 + 1/8 + 1/33 + 1/92                                           (this algorithm)
-2023/2024 == 1/2 + 1/3 + 1/7 + 1/43 + 1/18447 + 1/184184                             (this algorithm --reverse)
+$ time ./egypt 999999 1000000``
+1       2
+1       4
+1       8
+1       16
+1       33
+1       50
+1       83
+1       12450
+1       32912
+1       49368
+1       90387
+1       285716
+1       571432
+1       1999996
+1       685610442
+1       2057423870
+1       11904714285
+1       83332333335
+1       499999000000
+
+real    0m0.002s
+user    0m0.001s
+sys     0m0.000s
 ```
 
-* based on Lissajous Curves: https://mathworld.wolfram.com/LissajousCurve.html
+---
+
+## Samples
+### 7 / 19
+
+* Wolfram|Alpha
+  * 1 / 3 + 1 / 29 + 1 / 1653   
+* `egypt --merge --limit 19 7 19`
+  * 1 / 3 + 1 / 33 + 1 / 209    
+
+### 2023 / 2024
+* Wolfram|Alpha
+  * 1 / 2 + 1 / 3 + 1 / 7 + 1 / 43 + 1 / 16768 + 1 / 766160103 + 1 / 978335504948790912
+* `egypt --merge --limit 2023 2023 2024`
+  * 1 / 2 + 1 / 3 + 1 / 8 + 1 / 33 + 1 / 92
+* `egypt --reverse --merge --limit 2023 2023 2024`
+  * 1 / 2 + 1 / 3 + 1 / 7 + 1 / 43 + 1 / 18447 + 1 / 184184
+* `egypt 2023 2024`
+    *   1 / 2 + 1 / 4 + 1 / 8 + 1 / 11 + 1 / 33 + 1 / 674 + 1 / 899 + 1 / 2442 + 1 / 4044 + 1 / 24938 + 1 / 2046264 + 1 / 2423704
+
+---
+
+## Illustrations
+
+* Lissajous Curves: https://mathworld.wolfram.com/LissajousCurve.html
 
 ![lissajous1](doc/7_11.png)
 
@@ -30,8 +97,8 @@ compare e.g.:
 
 by different rational numbers with denominator coprime to the original denominator
 
-### 7/11
+### 7 / 11
 ![approx_7_11](doc/approx_7_11.png)
 
-### 7/11 errors
+### 7 / 11 errors
 ![approx_7_11_err](doc/approx_7_11_err.png)
