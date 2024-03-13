@@ -106,7 +106,7 @@ FixDuplicates[eg_List] :=
             i = FirstPosition[x, _List ? (Length @ # > 1&)];
             ReverseSort @
                 Flatten @
-                    If[i == {},
+                    If[MissingQ @ i || i == {},
                         x
                         ,
                         i = First @ i;
