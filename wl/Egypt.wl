@@ -132,7 +132,7 @@ EgyptianFractions[q_Rational, OptionsPattern[]] :=
                 FormatRawFractions @ raw
             ,
             "Merged",
-                FixDuplicates @ MergeFractions @ FixDuplicates @ EvaluateRawFractions
+                FixDuplicates @ MergeFractions @ EvaluateRawFractions
                      @ HalveAll[raw, OptionValue[MaxItems]]
         ]
     ]
@@ -150,7 +150,7 @@ sqrth[x_, n_] :=
     1 + Sum[HoldForm[#]& @ term[x, j], {j, 1, n}]
 
 sqrtl[x_, n_] :=
-    [{1}, Table[term[x, j], {j, 1, n}]]
+    Join[{1}, Table[term[x, j], {j, 1, n}]]
 
 pellsol[n_, c_] :=
     Normal @ First @ Solve[x^2 - n y^2 == 1, {x, y}, PositiveIntegers
