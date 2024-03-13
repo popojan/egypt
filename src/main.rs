@@ -18,6 +18,10 @@ struct Args {
     #[clap(short, long, value_parser, default_value_t = false)]
     reverse: bool,
 
+    /// Extra merge step with quadratic complexity possibly reducing number of terms
+    #[clap(short, long, value_parser, default_value_t = false)]
+    merge: bool,
+
     /// Do not merge
     #[clap(long, value_parser, default_value_t = false)]
     raw: bool,
@@ -35,6 +39,11 @@ struct Args {
 
     #[clap(value_parser, default_value_t = BigInt::from(1))]
     denominator: BigInt,
+
+    /// Maximum number of terms for breaking large symbolic sums
+    #[clap(short, long, value_parser, default_value_t = 16)]
+    limit: usize,
+
 }
 
 fn low(x: &BigInt, y: &BigInt) -> (BigInt, BigInt) {
@@ -111,7 +120,7 @@ fn as_egyptian_fraction_symbolic(x0: &BigInt, y0: &BigInt, _expand: bool) -> Vec
     let mut x = x0.clone();
     let mut y = y0.clone();
     if x.ge(&y) {
-        whole.push((BigInt::one(), BigInt::zero(), BigInt::one(), x.clone().div(&y)));
+        whole.push((x.clone().div(&y), BigInt::zero(), BigInt::zero(), BigInt::zero()));
         x.sub_assign(x.clone().div(&y).mul(y.clone()));
     }
     while x.gt(&BigInt::zero()) && y.gt(&BigInt::one()) {
@@ -127,7 +136,7 @@ fn as_egyptian_fraction_symbolic(x0: &BigInt, y0: &BigInt, _expand: bool) -> Vec
         y.div_assign(&gcd);
     }
     if !x.is_zero() {
-        ret.push((y.clone(), BigInt::one(), BigInt::one(), BigInt::one()));
+        ret.push((y.clone(), BigInt::one(), BigInt::zero(), BigInt::zero()));
     }
     ret.extend(whole);
     ret.reverse();//sort_by(|x, y| { x.1.cmp(&y.1)});
@@ -137,6 +146,10 @@ fn as_egyptian_fraction_symbolic(x0: &BigInt, y0: &BigInt, _expand: bool) -> Vec
 fn expand(eg: &Vec<(BigInt, BigInt, BigInt, BigInt)>) -> Vec<(BigInt, BigInt, BigInt, BigInt)> {
     let mut ret = vec![];
     for (b,v,i,j) in eg.iter() {
+        if v.is_zero() && i.is_zero() && j.is_zero() {
+            ret.push((b.clone(), BigInt::one(), BigInt::zero(), BigInt::zero()));
+            continue;
+        }
         for k in i.to_usize().unwrap() .. j.to_usize().unwrap() + 1 {
             let num = BigInt::one();
             let den = b.sub(v).add(v.clone().mul(&k))
@@ -148,19 +161,108 @@ fn expand(eg: &Vec<(BigInt, BigInt, BigInt, BigInt)>) -> Vec<(BigInt, BigInt, Bi
 }
 /// Converts rational numbers to egyptian fractions
 
-fn as_egyptian_fraction(a:&BigInt, b:&BigInt, raw:bool, reverse:bool)->Vec<(BigInt, BigInt,BigInt,BigInt)> {
+fn as_egyptian_fraction(a:&BigInt, b:&BigInt, args: &Args)->Vec<(BigInt, BigInt,BigInt,BigInt)> {
     let mut res = as_egyptian_fraction_symbolic(
         &a,
         &b,
-        reverse);
-    if !raw {
+        args.reverse);
+    if !args.raw {
+        res = halve_symbolic_sums(&res, args.limit);
         res = expand(&res);
-        if !reverse {
-            res.reverse();
+        res = fix_duplicates(&res);
+        if args.merge {
+            if !args.reverse {
+                res.reverse();
+            }
+            res = merge(&res);
         }
-        res = merge(&res);
     }
     res
+}
+
+fn fix_duplicates(eg: &Vec<(BigInt, BigInt, BigInt, BigInt)>)
+    -> Vec<(BigInt, BigInt, BigInt, BigInt)> {
+      if eg.is_empty() {
+          return eg.clone();
+      }
+    let mut last_i = 0;
+    let mut eg = eg.clone();
+    while last_i < eg.len() {
+        eg.sort_by(|x, y| { x.1.cmp(&y.1)});
+        let mut ret = vec![];
+        let mut cnt = 1;
+        let mut prev = eg.first().unwrap();
+        last_i = eg.len();
+        for (i, current) in eg.iter().enumerate().skip(1) {
+            if current == prev {
+                cnt += 1;
+            } else if cnt > 1 {
+                last_i = i;
+                break;
+            } else {
+                cnt = 1;
+                ret.push(prev.clone());
+                prev = current;
+            }
+        }
+        if last_i < eg.len() {
+            let a = BigInt::from(cnt);
+            let b = prev.clone();
+            let gcd = a.gcd(&b.1);
+            let new = as_egyptian_fraction_symbolic(&a.div(&gcd), &b.1.div(&gcd), false);
+            ret.extend(expand(&new));
+            ret.extend(eg[last_i..eg.len()].to_vec());
+        } else {
+            ret.push(prev.clone());
+        }
+        if eg == ret {
+            break;
+        }
+        eg.clear();
+        eg.extend(ret);
+    }
+    eg
+}
+
+fn calculate_raw_sum(u:&BigInt, v:&BigInt, i:&BigInt, j:&BigInt) -> (BigInt, BigInt) {
+    let num = BigInt::one().sub(i).add(j);
+    let den = u.clone().sub(v).add(v.clone().mul(i)).mul(u.add(v.mul(j)));
+    let gcd = num.gcd(&den);
+    (num.div(&gcd), den.div(&gcd))
+}
+
+fn halve_symbolic_sums(a: &Vec<(BigInt, BigInt, BigInt, BigInt)>, limit: usize)
+    -> Vec<(BigInt, BigInt, BigInt, BigInt)>
+{
+    let mut stack = a.clone();
+    let mut ret = vec![] ;
+    let limit = BigInt::from(limit);
+    let two = BigInt::from(2);
+    while !stack.is_empty() {
+        let (u, v, i, j) = stack.pop().unwrap();
+        let term_count = j.clone().sub(&i).add(&BigInt::one());
+        if term_count.le(&limit) {
+            ret.push((u, v, i, j));
+        } else {
+            let (a, b) = calculate_raw_sum(&u, &v, &i, &j);
+            if a.is_odd() {
+                let a1 = a.sub(&BigInt::one()).div(&two);
+                let a2 = a1.clone().add(&BigInt::one());
+                let gcd1 = a1.gcd(&b);
+                let gcd2 = a2.gcd(&b);
+                stack.extend(as_egyptian_fraction_symbolic(&a1.div(&gcd1), &b.clone().div(&gcd1), false));
+                stack.extend(as_egyptian_fraction_symbolic(&a2.div(&gcd2), &b.div(&gcd2), false));
+            } else {
+                let a1 = a.div(&two).sub(&BigInt::one());
+                let a2 = a1.clone().add(&two);
+                let gcd1 = a1.gcd(&b);
+                let gcd2 = a2.gcd(&b);
+                stack.extend(as_egyptian_fraction_symbolic(&a1.div(&gcd1), &b.clone().div(&gcd1), false));
+                stack.extend(as_egyptian_fraction_symbolic(&a2.div(&gcd2), &b.div(&gcd2), false));
+            }
+        }
+    }
+    ret
 }
 
 fn main() {
@@ -175,7 +277,8 @@ fn main() {
                 if !args.silent {
                     let mut gt0 = false;
                     print!("{}\t{}\t", num.to_str_radix(10), den.to_str_radix(10));
-                    for (i, (a, b, c, d)) in as_egyptian_fraction(&num, &den, args.raw, args.reverse).iter().enumerate() {
+                    for (i, (a, b, c, d))
+                        in as_egyptian_fraction(&num, &den, &args).iter().enumerate() {
                         if i == 0 && b.is_one() {
                             print!("{}\t", a);
                             gt0 = true;
@@ -201,7 +304,7 @@ fn main() {
         }
     } else {
         for (a, b, c, d) in as_egyptian_fraction(
-            &args.numerator, &args.denominator, args.raw, args.reverse).iter() {
+            &args.numerator, &args.denominator, &args).iter() {
             if !args.silent {
                 if c.is_zero() && d.is_zero() {
                     println!("{:?}\t{:?}", a, b);
