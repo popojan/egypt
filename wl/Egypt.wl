@@ -131,13 +131,17 @@ EgyptianFractions[q_Rational, OptionsPattern[]] :=
             "Expression",
                 FormatRawFractions @ raw
             ,
-            "Merged",
+            "Merge",
+                FixDuplicates @ MergeFractions @ Reverse @ EvaluateRawFractions
+                     @ HalveAll[raw, OptionValue[MaxItems]]
+            ,
+            "ReverseMerge",
                 FixDuplicates @ MergeFractions @ EvaluateRawFractions
                      @ HalveAll[raw, OptionValue[MaxItems]]
         ]
     ]
 
-Options[EgyptianFractions] = {Method -> "Classical", MaxItems -> 8}
+Options[EgyptianFractions] = {Method -> "Classical", MaxItems -> 2}
 
 term[x_, j_] :=
     1 / (1 + Sum[2 ^ (i - 1) x^i Factorial[j + i] / Factorial[j - i] 
