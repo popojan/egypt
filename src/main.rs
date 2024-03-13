@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::io;
 use num_bigint::BigInt;
 use num_traits::identities::One;
-use std::ops::{Add, Sub, Div, Mul, SubAssign, MulAssign, DivAssign};
+use std::ops::{Add, Sub, Div, Mul, SubAssign, Neg};
 use num_integer::Integer;
 use clap::Parser;
 use std::str::FromStr;
@@ -58,6 +58,14 @@ fn low(x: &BigInt, y: &BigInt) -> (BigInt, BigInt) {
     return (a.div(&gcd), b.div(&gcd))
 }
 
+fn add_fractions(a1:&BigInt, b1:&BigInt, a2:&BigInt, b2:&BigInt) -> (BigInt, BigInt) {
+    let den = b1.lcm(b2);
+    let num = a1.mul(den.clone().div(b1))
+                + a2.mul(den.clone().div(b2));
+    let gcd = num.gcd(&den);
+    (num.div(&gcd), den.div(&gcd))
+}
+
 fn _as_egyptian_fraction_raw(x0: &BigInt, y0: &BigInt, _reverse: bool) -> Vec<(BigInt, BigInt)> {
     let mut whole = Vec::<(BigInt, BigInt)>::new();
     let mut ret = Vec::<(BigInt, BigInt)>::new();
@@ -92,9 +100,7 @@ fn merge(eg: &Vec<(BigInt, BigInt, BigInt, BigInt)>) -> Vec<(BigInt, BigInt, Big
         let mut ones = vec![(i, x.clone(), y.clone())];
         for j in (i + 1)..eg.len() {
             let (x2, y2, _, _) = &eg[j];
-            (x, y) = (x.mul(y2).add(x2.mul(y.clone())), y.clone().mul(y2));
-            let gcd = x.gcd(&y);
-            (x, y) = (x.div(&gcd), y.div(&gcd));
+            (x, y) = add_fractions(&x, &y, &x2, &y2);
             let tup = (x.clone(), y.clone(), BigInt::zero(), BigInt::zero());
             //println!("{:?}/{:?}: {} / {}, {}", x, y, j, i, eg.len());
             if x.eq(&BigInt::one()) && !ret.contains(&tup)
@@ -128,19 +134,14 @@ fn as_egyptian_fraction_symbolic(x0: &BigInt, y0: &BigInt, _expand: bool) -> Vec
         let v = y.clone() - low(&x, &y).1;
         let t = x.clone().mul(&y).div(x.clone().mul(&v).add(&BigInt::one()));
         ret.push((y.clone() - t.clone().mul(&v), v.clone(), BigInt::one(), t.clone()));
-        let mul = y.clone() - t.clone().mul(&v);
-        y.mul_assign(&mul);
-        x.mul_assign(&mul);
-        x.sub_assign(&t);
-        let gcd = x.clone().gcd(&y);
-        x.div_assign(&gcd);
-        y.div_assign(&gcd);
+        let den = y.clone().mul(y.clone() - t.clone().mul(&v));
+        (x, y) = add_fractions(&x, &y, &t.clone().neg(), &den);
     }
     if !x.is_zero() {
         ret.push((y.clone(), BigInt::one(), BigInt::zero(), BigInt::zero()));
     }
     ret.extend(whole);
-    ret.reverse();//sort_by(|x, y| { x.1.cmp(&y.1)});
+    ret.reverse();
     ret
 }
 

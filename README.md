@@ -1,9 +1,12 @@
 # Egyptian Fractions
 
-* small denominators: largest denominator factor not greater than original denominator
-* suitable for large inputs
+Fast algorithm for representing rational numbers as egyptian fractions.
 
-## Usage:
+## Properties
+* suitable for very large inputs
+* returns rather small denominators
+
+## Usage
 
 ```
 Egyptian Fractions
@@ -25,7 +28,7 @@ Options:
   -V, --version        Print version
 ```
 
-
+## Performance
 ```
 $ time ./egypt -s 162259276829213363391578010288127 170141183460469231731687303715884105727
 
@@ -63,7 +66,8 @@ sys     0m0.000s
 
 ---
 
-## Samples
+## Examples
+
 ### 7 / 19
 
 * Wolfram|Alpha
@@ -80,6 +84,15 @@ sys     0m0.000s
   * 1 / 2 + 1 / 3 + 1 / 7 + 1 / 43 + 1 / 18447 + 1 / 184184
 * `egypt 2023 2024`
     *   1 / 2 + 1 / 4 + 1 / 8 + 1 / 11 + 1 / 33 + 1 / 674 + 1 / 899 + 1 / 2442 + 1 / 4044 + 1 / 24938 + 1 / 2046264 + 1 / 2423704
+
+## Note
+
+> * returns rather small denominators
+>
+When using legacy configuration `egypt --merge --limit <LIMIT> <NUMERATOR> <DENOMINATOR>`, where `LIMIT >= DENOMINATOR - 1`,
+largest denominator factor should not be greater than original denominator. Fast default limit is however `2`,
+which means that *bisecting* large symbolic sums can introduce bigger denominators. Moreover, `--limit` argument is itself
+limited by `usize`, as opposed to other `BigInt` inputs.
 
 ---
 
