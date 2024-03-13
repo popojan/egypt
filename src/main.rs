@@ -22,7 +22,7 @@ struct Args {
     #[clap(short, long, value_parser, default_value_t = false)]
     merge: bool,
 
-    /// Do not merge
+    /// Output minimal number of raw quadruplets (aka symbolic sums)
     #[clap(long, value_parser, default_value_t = false)]
     raw: bool,
 
@@ -41,7 +41,7 @@ struct Args {
     denominator: BigInt,
 
     /// Maximum number of terms for breaking large symbolic sums
-    #[clap(short, long, value_parser, default_value_t = 16)]
+    #[clap(short, long, value_parser, default_value_t = 2)]
     limit: usize,
 
 }
@@ -117,8 +117,9 @@ fn merge(eg: &Vec<(BigInt, BigInt, BigInt, BigInt)>) -> Vec<(BigInt, BigInt, Big
 fn as_egyptian_fraction_symbolic(x0: &BigInt, y0: &BigInt, _expand: bool) -> Vec<(BigInt, BigInt, BigInt, BigInt)> {
     let mut whole = Vec::<(BigInt, BigInt, BigInt, BigInt)>::new();
     let mut ret = Vec::<(BigInt, BigInt, BigInt, BigInt)>::new();
-    let mut x = x0.clone();
-    let mut y = y0.clone();
+    let gcd = x0.gcd(&y0);
+    let mut x = x0.div(&gcd).clone();
+    let mut y = y0.div(&gcd).clone();
     if x.ge(&y) {
         whole.push((x.clone().div(&y), BigInt::zero(), BigInt::zero(), BigInt::zero()));
         x.sub_assign(x.clone().div(&y).mul(y.clone()));
@@ -279,11 +280,17 @@ fn main() {
                     print!("{}\t{}\t", num.to_str_radix(10), den.to_str_radix(10));
                     for (i, (a, b, c, d))
                         in as_egyptian_fraction(&num, &den, &args).iter().enumerate() {
-                        if i == 0 && b.is_one() {
+                        let is_natural = (args.raw && b.is_zero() && c.is_zero() && d.is_zero())
+                            || (!args.raw && b.is_one());
+                        if i == 0 && is_natural {
                             print!("{}\t", a);
                             gt0 = true;
                         } else if i == 0 {
-                            print!("0\t{}", b);
+                            if !args.raw {
+                                print!("0\t{}", b);
+                            } else {
+                                print!("0\t{},{},{},{}", a, b, c, d);
+                            }
                         } else if i == 1 && gt0 {
                             if args.raw {
                                 print!("{},{},{},{}", a, b, c, d);
@@ -306,7 +313,7 @@ fn main() {
         for (a, b, c, d) in as_egyptian_fraction(
             &args.numerator, &args.denominator, &args).iter() {
             if !args.silent {
-                if c.is_zero() && d.is_zero() {
+                if !args.raw {
                     println!("{:?}\t{:?}", a, b);
                 } else {
                     println!("{:?}\t{:?}\t{:?}\t{:?}", a, b, c, d);
