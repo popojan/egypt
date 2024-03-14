@@ -3,6 +3,8 @@ use std::ops::{Add, Sub, Div, Mul, SubAssign};
 use clap::Parser;
 use std::str::FromStr;
 use rug::{Complete, Integer, Rational};
+use rug::ops::Pow;
+
 /// Egyptian Fractions
 
 #[derive(Parser, Debug)]
@@ -13,7 +15,7 @@ struct Args {
     #[clap(short, long, value_parser, default_value_t = false)]
     reverse: bool,
 
-    /// Extra merge step with quadratic complexity possibly reducing number of terms
+    /// Extra O(n^2) merge step possibly reducing number of terms
     #[clap(short, long, value_parser, default_value_t = false)]
     merge: bool,
 
@@ -29,15 +31,15 @@ struct Args {
     #[clap(short, long, value_parser, default_value_t = false)]
     silent: bool,
 
-    /// Batch mode (expects numerator and denominator on each line of standard input)
+    /// Batch mode (expects numerator and denominator on each line of stdin)
     #[clap(long, value_parser, default_value_t = false)]
     batch: bool,
 
-    #[clap(value_parser, default_value_t = Integer::from(1))]
-    numerator: Integer,
+    #[clap(value_parser, default_value_t = String::from("1"))]
+    numerator: String,
 
-    #[clap(value_parser, default_value_t = Integer::from(1))]
-    denominator: Integer,
+    #[clap(value_parser, default_value_t = String::from("1"))]
+    denominator: String,
 
     /// Maximum number of terms for breaking large symbolic sums
     #[clap(short, long, value_parser, default_value_t = 8)]
@@ -224,15 +226,39 @@ fn halve_symbolic_sums(a: &Vec<(Integer, Integer, Integer, Integer)>, limit: usi
     ret
 }
 
+fn _parse_rpn(s: &str) -> Integer { // TODO error handling
+    let parts = s.split(" ")
+        .into_iter().map(|x| x.to_string()).collect::<Vec::<String>>();
+    let mut stack = Vec::<String>::new();
+    for el in parts.iter() {
+        if el == "^" || el == "-" || el == "+" {
+            let b = Integer::from_str(&stack.pop().unwrap()).unwrap();
+            let a = Integer::from_str(&stack.pop().unwrap()).unwrap();
+            let c = if el == "^" {
+                a.pow(&b.to_u32().unwrap())
+            } else if el == "+" {
+                a.add(&b)
+            } else if el == "-" {
+                a.sub(&b)
+            } else {
+                Integer::from(0)
+            };
+            stack.push(c.to_string());
+        } else {
+            stack.push(el.to_string());
+        }
+    };
+    Integer::from_str(&stack.pop().unwrap()).unwrap()
+}
 fn main() {
     let args = Args::parse();
 
     if args.batch {
         for line in io::stdin().lines() {
             if let Ok(line) = line {
-                let num_den = line.split_ascii_whitespace().take(2).collect::<Vec<&str>>();
-                let num = Integer::from_str(num_den[0]).unwrap();
-                let den = Integer::from_str(num_den[1]).unwrap();
+                let num_den = line.split("\t").take(2).collect::<Vec<&str>>();
+                let num = _parse_rpn(num_den[0]);
+                let den = _parse_rpn(num_den[1]);
                 if !args.silent {
                     let mut gt0 = false;
                     print!("{}\t{}\t", num.to_string(), den.to_string());
@@ -269,7 +295,7 @@ fn main() {
         }
     } else {
         for (a, b, c, d) in as_egyptian_fraction(
-            &args.numerator, &args.denominator, &args).iter() {
+            &_parse_rpn(&args.numerator), &_parse_rpn(&args.denominator), &args).iter() {
             if !args.silent {
                 if !args.raw {
                     println!("{:?}\t{:?}", a, b);

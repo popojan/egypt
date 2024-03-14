@@ -19,17 +19,25 @@ Arguments:
 
 Options:
   -r, --reverse        Reverse merge strategy
-  -m, --merge          Extra merge step with quadratic complexity possibly reducing number of terms
+  -m, --merge          Extra O(n^2) merge step possibly reducing number of terms
       --raw            Output minimal number of raw quadruplets (aka symbolic sums)
       --bisect         Output raw quadruplets bisected according to --limit
   -s, --silent         No output
-      --batch          Batch mode (expects numerator and denominator on each line of standard input)
+      --batch          Batch mode (expects numerator and denominator on each line of stdin)
   -l, --limit <LIMIT>  Maximum number of terms for breaking large symbolic sums [default: 8]
   -h, --help           Print help
   -V, --version        Print version
 ```
 
 ## Performance
+```
+$ time ./egypt -s '2 9689 ^ 1 -' '2 9941 ^ 1 -'
+
+real    0m0.566s
+user    0m0.528s
+sys     0m0.036s
+```
+
 ```
 $ time ./egypt -s 162259276829213363391578010288127 170141183460469231731687303715884105727
 
