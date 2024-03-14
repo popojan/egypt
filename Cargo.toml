@@ -1,14 +1,18 @@
 [package]
 name = "egypt"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 
 [dependencies]
-num-bigint = "0.4.4"
-num-traits = "0.2.18"
-num-integer = "0.1.46"
-clap = { version = "4.5.1", features = ["derive"] }
+clap = { version = "4.5.2", features = ["derive"] }
+num-prime = "0.4.3"
+
+[dependencies.rug]
+version = "1.24"
+default-features = false
+features = ["integer", "rational", "std"]
 
 [profile.release]
 panic = "abort"
 opt-level = 3
+debug = false
