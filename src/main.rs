@@ -1,9 +1,11 @@
+mod rpn;
+
+use crate::rpn::_parse_rpn;
+
 use std::io;
 use std::ops::{Add, Sub, Div, Mul, SubAssign};
 use clap::Parser;
-use std::str::FromStr;
 use rug::{Complete, Integer, Rational};
-use rug::ops::Pow;
 
 /// Egyptian Fractions
 
@@ -225,31 +227,6 @@ fn halve_symbolic_sums(a: &Vec<(Integer, Integer, Integer, Integer)>, limit: usi
     }
     ret
 }
-
-fn _parse_rpn(s: &str) -> Integer { // TODO error handling
-    let parts = s.split(" ")
-        .into_iter().map(|x| x.to_string()).collect::<Vec::<String>>();
-    let mut stack = Vec::<String>::new();
-    for el in parts.iter() {
-        if el == "^" || el == "-" || el == "+" {
-            let b = Integer::from_str(&stack.pop().unwrap()).unwrap();
-            let a = Integer::from_str(&stack.pop().unwrap()).unwrap();
-            let c = if el == "^" {
-                a.pow(&b.to_u32().unwrap())
-            } else if el == "+" {
-                a.add(&b)
-            } else if el == "-" {
-                a.sub(&b)
-            } else {
-                Integer::from(0)
-            };
-            stack.push(c.to_string());
-        } else {
-            stack.push(el.to_string());
-        }
-    };
-    Integer::from_str(&stack.pop().unwrap()).unwrap()
-}
 fn main() {
     let args = Args::parse();
 
@@ -257,6 +234,10 @@ fn main() {
         for line in io::stdin().lines() {
             if let Ok(line) = line {
                 let num_den = line.split("\t").take(2).collect::<Vec<&str>>();
+                if num_den.len() < 2 {
+                    println!("expecting tab delimited numerator and denominator");
+                    continue;
+                }
                 let num = _parse_rpn(num_den[0]);
                 let den = _parse_rpn(num_den[1]);
                 if !args.silent {
