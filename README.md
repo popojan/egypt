@@ -23,7 +23,7 @@ Options:
       --raw            Output minimal number of raw quadruplets (aka symbolic sums)
   -s, --silent         No output
       --batch          Batch mode (expects numerator and denominator on each line of standard input)
-  -l, --limit <LIMIT>  Maximum number of terms for breaking large symbolic sums [default: 2]
+  -l, --limit <LIMIT>  Maximum number of terms for breaking large symbolic sums [default: 8]
   -h, --help           Print help
   -V, --version        Print version
 ```
@@ -32,8 +32,8 @@ Options:
 ```
 $ time ./egypt -s 162259276829213363391578010288127 170141183460469231731687303715884105727
 
-real    0m0.003s
-user    0m0.002s
+real    0m0.002s
+user    0m0.001s
 sys     0m0.001s
 ```
 
@@ -60,8 +60,8 @@ $ time ./egypt 999999 1000000``
 1       499999000000
 
 real    0m0.002s
-user    0m0.001s
-sys     0m0.000s
+user    0m0.000s
+sys     0m0.002s
 ```
 
 ---
@@ -82,7 +82,7 @@ sys     0m0.000s
   * 1 / 2 + 1 / 3 + 1 / 8 + 1 / 33 + 1 / 92
 * `egypt --reverse --merge --limit 2023 2023 2024`
   * 1 / 2 + 1 / 3 + 1 / 7 + 1 / 43 + 1 / 18447 + 1 / 184184
-* `egypt 2023 2024`
+* `egypt --limit 2 2023 2024`
     *   1 / 2 + 1 / 4 + 1 / 8 + 1 / 11 + 1 / 33 + 1 / 674 + 1 / 899 + 1 / 2442 + 1 / 4044 + 1 / 24938 + 1 / 2046264 + 1 / 2423704
 
 ## Note

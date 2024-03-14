@@ -1,9 +1,8 @@
-use std::collections::HashSet;
 use std::io;
-use std::ops::{Add, Sub, Div, Mul, SubAssign, Neg};
+use std::ops::{Add, Sub, Div, Mul, SubAssign};
 use clap::Parser;
 use std::str::FromStr;
-use rug::{Complete, Integer};
+use rug::{Complete, Integer, Rational};
 /// Egyptian Fractions
 
 #[derive(Parser, Debug)]
@@ -54,87 +53,51 @@ fn low(x: &Integer, y: &Integer) -> (Integer, Integer) {
     };
     let m = x.clone().mul(&b);
     let a = m.clone().div(y);
-    let gcd = a.clone().gcd(&b);
-    return (a.div(&gcd), b.clone().div(&gcd))
-}
-
-fn add_fractions(a1:&Integer, b1:&Integer, a2:&Integer, b2:&Integer) -> (Integer, Integer) {
-    let den = b1.clone().lcm(b2);
-    let num = a1.mul(den.clone().div(b1))
-                + a2.mul(den.clone().div(b2));
-    let gcd = num.clone().gcd(&den);
-    (num.div(&gcd), den.div(&gcd))
-}
-
-fn _as_egyptian_fraction_raw(x0: &Integer, y0: &Integer, _reverse: bool) -> Vec<(Integer, Integer)> {
-    let mut whole = Vec::<(Integer, Integer)>::new();
-    let mut ret = Vec::<(Integer, Integer)>::new();
-    let mut x = x0.clone();
-    let mut y = y0.clone();
-     if x.ge(&y) {
-        whole.push((x.clone().div(&y), Integer::from(1)));
-        x = x.clone().sub(x.div(&y).mul(y.clone()));
-    }
-    while x.gt(&Integer::from(1)) {
-        let (x2, y2) = low(&x, &y);
-        let (a, b) = (x.clone().mul(&y2).sub(x2.clone().mul(&y)), y.clone().mul(&y2));
-        let gcd = a.clone().gcd(&b);
-        ret.push((a.div(&gcd), b.div(&gcd)));
-        (x, y) = (x2, y2);
-    }
-    if !x.is_zero() {
-        ret.extend(vec![(x.clone(), y.clone())]);
-    }
-    ret.extend(whole);
-    ret.sort_by(|x, y| { x.1.cmp(&y.1)});
-    ret
+    Rational::from((a, b)).into_numer_denom()
 }
 
 fn merge(eg: &Vec<(Integer, Integer, Integer, Integer)>) -> Vec<(Integer, Integer, Integer, Integer)> {
     let mut i = 0_usize;
-    let mut ret = HashSet::<(Integer, Integer, Integer, Integer)>::new();
+    let mut ret = vec![];
     while i < eg.len() {
-        let (mut x, mut y, _, _) = eg[i].clone();
-        let (mut ones_i, mut ones_x, mut ones_y) = (i, x.clone(), y.clone());
+        let mut q = Rational::from((eg[i].0.clone(), eg[i].1.clone()));
+        let (mut ones_i, mut ones_q) = (i, q.clone());
         for j in (i + 1)..eg.len() {
-            let (x2, y2, _, _) = &eg[j];
-            (x, y) = add_fractions(&x, &y, &x2, &y2);
-            if x == Integer::from(1) {
-                (ones_i, ones_x, ones_y) = (j, x.clone(), y.clone());
+            let p = &eg[j];
+            q += Rational::from((p.0.clone(), p.1.clone()));
+            if q.numer() == &Integer::from(1) {
+                (ones_i, ones_q) = (j, q.clone());
             }
         }
-        let (j, x, y) = (ones_i, ones_x, ones_y);
+        let (j, q) = (ones_i, ones_q);
         //println!("{:?} {:?} {:?}", ones, x, y);
-        ret.insert((x.clone(), y.clone(), Integer::from(0), Integer::from(0)));
+        let (x, y) = q.into_numer_denom();
+        ret.push((x, y, Integer::from(0), Integer::from(0)));
         i = j + 1;
     }
-    let mut ret = ret
-        .into_iter().collect::<Vec<(Integer, Integer, Integer, Integer)>>();
-    ret.sort_by(|x, y| { x.1.cmp(&y.1)});
     ret
 }
 
 fn as_egyptian_fraction_symbolic(x0: &Integer, y0: &Integer, _expand: bool, ret: &mut Vec<(Integer, Integer, Integer, Integer)>) {
-    let mut whole = Vec::<(Integer, Integer, Integer, Integer)>::new();
     let gcd = x0.clone().gcd(&y0);
     let mut x = x0.div(&gcd).complete();
     let mut y = y0.div(&gcd).complete();
     if x.ge(&y) {
-        whole.push((x.clone().div(&y), Integer::from(0), Integer::from(0), Integer::from(0)));
+        ret.push((x.clone().div(&y), Integer::from(0), Integer::from(0), Integer::from(0)));
         x.sub_assign(x.clone().div(&y).mul(y.clone()));
     }
     while x.gt(&Integer::from(0)) && y.gt(&Integer::from(1)) {
         let v = y.clone() - low(&x, &y).1;
         let t = x.clone().mul(&y).div(x.clone().mul(&v).add(&Integer::from(1)));
-        ret.push((y.clone() - t.clone().mul(&v), v.clone(), Integer::from(1), t.clone()));
-        let den = y.clone().mul(y.clone() - t.clone().mul(&v));
-        (x, y) = add_fractions(&x, &y, &t.clone().neg(), &den);
+        let y_tv = y.clone() - t.clone().mul(&v);
+        ret.push((y_tv.clone(), v.clone(), Integer::from(1), t.clone()));
+        let den = y.clone().mul(y_tv);
+        let q = Rational::from((x.clone(),y.clone())) - Rational::from((t, den));
+        (x, y) = q.into_numer_denom();
     }
     if !x.is_zero() {
         ret.push((y.clone(), Integer::from(1), Integer::from(0), Integer::from(0)));
     }
-    ret.extend(whole);
-    ret.reverse();
 }
 
 fn expand(eg: &Vec<(Integer, Integer, Integer, Integer)>) -> Vec<(Integer, Integer, Integer, Integer)> {
@@ -164,13 +127,14 @@ fn as_egyptian_fraction(a:&Integer, b:&Integer, args: &Args)->Vec<(Integer, Inte
     if !args.raw {
         res = halve_symbolic_sums(&res, args.limit);
         res = expand(&res);
-        res = fix_duplicates(&res);
+        res.sort_by(|x, y| { x.1.cmp(&y.1)});
         if args.merge {
             if !args.reverse {
                 res.reverse();
             }
             res = merge(&res);
         }
+        res = fix_duplicates(&res);
     } else {
         if args.bisect {
             res = halve_symbolic_sums(&res, args.limit);
