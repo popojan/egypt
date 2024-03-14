@@ -21,6 +21,7 @@ Options:
   -r, --reverse        Reverse merge strategy
   -m, --merge          Extra merge step with quadratic complexity possibly reducing number of terms
       --raw            Output minimal number of raw quadruplets (aka symbolic sums)
+      --bisect         Output raw quadruplets bisected according to --limit
   -s, --silent         No output
       --batch          Batch mode (expects numerator and denominator on each line of standard input)
   -l, --limit <LIMIT>  Maximum number of terms for breaking large symbolic sums [default: 8]

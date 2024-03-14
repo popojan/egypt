@@ -116,7 +116,6 @@ fn expand(eg: &Vec<(Integer, Integer, Integer, Integer)>) -> Vec<(Integer, Integ
     }
     ret
 }
-/// Converts rational numbers to egyptian fractions
 
 fn as_egyptian_fraction(a:&Integer, b:&Integer, args: &Args)->Vec<(Integer, Integer,Integer,Integer)> {
     let mut res = vec![];
