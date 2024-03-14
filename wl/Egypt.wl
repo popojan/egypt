@@ -141,10 +141,10 @@ EgyptianFractions[q_Rational, OptionsPattern[]] :=
         ]
     ]
 
-Options[EgyptianFractions] = {Method -> "Classical", MaxItems -> 2}
+Options[EgyptianFractions] = {Method -> "Classical", MaxItems -> 8}
 
 term[x_, j_] :=
-    1 / (1 + Sum[2 ^ (i - 1) x^i Factorial[j + i] / Factorial[j - i] 
+    1 / (1 + Sum[2 ^ (i - 1) x^i Factorial[j + i] / Factorial[j - i]
         / Factorial[2 i], {i, 1, j}])
 
 sqrtt[x_, n_] :=
