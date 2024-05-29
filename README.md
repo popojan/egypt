@@ -2,6 +2,8 @@
 
 Fast algorithm for representing rational numbers as egyptian fractions.
 
+![hurry up](doc/regular-poly.gif)
+
 ## Properties
 * suitable for very large inputs
 * returns rather small denominators
