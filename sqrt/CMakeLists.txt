@@ -3,7 +3,7 @@ project(sqrt C)
 
 set(CMAKE_C_STANDARD 11)
 
-set(CMAKE_C_FLAGS "-O3 -funroll-loops -fno-fast-math")
+set(CMAKE_C_FLAGS "-O3 -fno-fast-math -funroll-loops")
 
 set(CMAKE_LIB)
 
