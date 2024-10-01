@@ -4,11 +4,11 @@ version = "0.0.2"
 edition = "2021"
 
 [dependencies]
-clap = { version = "4.5.2", features = ["derive"] }
-num-prime = "0.4.3"
+clap = { version = "4.5", features = ["derive"] }
+num-prime = "0.4"
 
 [dependencies.rug]
-version = "1.24"
+version = "1.25"
 default-features = false
 features = ["integer", "rational", "std"]
 

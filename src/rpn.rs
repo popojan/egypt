@@ -53,7 +53,7 @@ pub fn _parse_rpn(s: &str) -> Integer { // TODO error handling
             }
             stack.push(c.to_string());
 
-        } else if el == "!"  || el == "p" || el == "sqrt" {
+        } else if el == "!"  || el == "p" || el == "sqrt" || el == "np" || el == "pp" {
             let mut a = Integer::from_str(&stack.pop().unwrap()).unwrap();
             let c = if el == "!" {
                 let mut c = Integer::from(1);
@@ -64,13 +64,17 @@ pub fn _parse_rpn(s: &str) -> Integer { // TODO error handling
                 c.to_string()
             } else if el == "p" {
                 nth_prime(a.to_u64().unwrap()).to_string()
+            } else if el == "np" {
+                a.next_prime().to_string()
+            } else if el == "pp" {
+                a.prev_prime().to_string()
             } else if el == "sqrt" {
                 a.sqrt().to_string()
             } else {
                 "0".to_string()
             };
             stack.push(c);
-        } else {
+        }  else {
             stack.push(el.to_string());
         }
     };

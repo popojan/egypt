@@ -127,8 +127,9 @@ fn as_egyptian_fraction(a:&Integer, b:&Integer, args: &Args)->Vec<(Integer, Inte
         &a,
         &b,
         args.reverse, &mut res);
+    let limit = args.limit.max(2);
     if !args.raw {
-        res = halve_symbolic_sums(&res, args.limit);
+        res = halve_symbolic_sums(&res, limit);
         res = expand(&res);
         res.sort_by(|x, y| { x.1.cmp(&y.1)});
         if args.merge {
@@ -140,7 +141,7 @@ fn as_egyptian_fraction(a:&Integer, b:&Integer, args: &Args)->Vec<(Integer, Inte
         res = fix_duplicates(&res);
     } else {
         if args.bisect {
-            res = halve_symbolic_sums(&res, args.limit);
+            res = halve_symbolic_sums(&res, limit);
         }
     }
     res
@@ -238,8 +239,9 @@ fn main() {
                     println!("expecting tab delimited numerator and denominator");
                     continue;
                 }
-                let num = _parse_rpn(num_den[0]);
-                let den = _parse_rpn(num_den[1]);
+
+                let num = _parse_rpn(num_den[0]).abs();
+                let den = _parse_rpn(num_den[1]).abs();
                 if !args.silent {
                     let mut gt0 = false;
                     print!("{}\t{}\t", num.to_string(), den.to_string());
@@ -276,7 +278,7 @@ fn main() {
         }
     } else {
         for (a, b, c, d) in as_egyptian_fraction(
-            &_parse_rpn(&args.numerator), &_parse_rpn(&args.denominator), &args).iter() {
+            &_parse_rpn(&args.numerator).abs(), &_parse_rpn(&args.denominator).abs(), &args).iter() {
             if !args.silent {
                 if !args.raw {
                     println!("{:?}\t{:?}", a, b);
