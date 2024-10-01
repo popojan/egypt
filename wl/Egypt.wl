@@ -29,28 +29,26 @@ HalveRawFractionsOnce[{u_, v_, i_, j_}, lim_] :=
     ]
 
 RawFractions[q_Rational] :=
-    Module[{e = {}, x, v, a, b, t, r = q},
+    Module[{e = {}, x, v, vm, a, b, t, r = q},
+        {a, b} = NumeratorDenominator @ r;
         While[
-            {a, b} = NumeratorDenominator @ r;
-            r > 0 && b > 1
+            a > 0 && b > 1
             ,
             v =
-                b -
-                    Denominator[
-                        1 / # Floor[a / b #]& @
-                            If[b - a == 1,
-                                a
-                                ,
-                                Mod[ExtendedGCD[a, b][[2, 1]] + b, b]
-                                    
-                            ]
+                b - Denominator[1 / # Quotient[a #, b]]& @
+                    If[b - a == 1,
+                        a
+                        ,
+                        Mod[ExtendedGCD[a, b][[2, 1]] + b, b]
                     ];
-            t = Floor[a b / (1 + a v)];
-            PrependTo[e, {b - t v, v, 1, t}];
-            r -= t / b / (b - t v)
+            t = Quotient[a b, 1 + a v];
+            vm = b - t v;
+            PrependTo[e, {vm, v, 1, t}];
+            a = (a vm - t) / b;
+            b = vm
         ];
-        If[r > 0,
-            Prepend[e, {1 / Sqrt @ r, 0, 0, 0}]
+        If[a > 0,
+            Prepend[e, {1 / Sqrt @ a, 0, 0, 0}]
             ,
             e
         ]
