@@ -6,8 +6,6 @@ EgyptianFractions::usage = "EgyptianFractions[ q] converts a rational number to 
 
 EgyptianSqrtApproximate::usage = "EgyptianSqrtApproximate[ n] approximates a square root by a rational number using egyptian fractions"
 
-k;
-
 Begin["Private`"]
 
 HalveRawFractionsOnce[{u_, v_, i_, j_}, lim_] :=
