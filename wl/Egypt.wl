@@ -53,12 +53,13 @@ RawFractions[q_Rational] :=
     ]
 
 FormatRawFractions[q_List] :=
-    If[#3 == #4,
-            1 / (#1 + #2 #3) / (#1 + #2 (#3 - 1))
+    Function[{a, b, c, d},
+        If[ c == 0 && d == 0
             ,
-            HoldForm @ Sum[#1, {k, #2, #3}]& @@ {1 / (#1 + k #2) / (#1
-                 + (k - 1) #2), #3, #4}
-        ]& @@@ q
+            1 / a / a
+            ,
+            HoldForm @ Sum[ 1 / (a + b \[FormalK]) / (a + b (\[FormalK] - 1)), {\[FormalK], c, d}]
+        ]] @@@ q
 
 EvaluateRawFractions[q_List] :=
     ReverseSort @ Flatten[Table[1 / (#1 + #2 k) / (#1 + #2 (k - 1)), 
