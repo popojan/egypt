@@ -73,8 +73,8 @@ fn merge(eg: &Vec<(Integer, Integer, Integer, Integer)>) -> Vec<(Integer, Intege
 
 fn as_egyptian_fraction_symbolic(x0: &Integer, y0: &Integer, _expand: bool, ret: &mut Vec<(Integer, Integer, Integer, Integer)>) {
     let gcd = x0.clone().gcd(&y0);
-    let mut x = x0.div(&gcd).complete();
-    let mut y = y0.div(&gcd).complete();
+    let mut x = x0.clone().div(&gcd);
+    let mut y = y0.clone().div(&gcd);
     if x.ge(&y) {
         ret.push((x.clone().div(&y),0.into(), 0.into(), 0.into()));
         x.sub_assign(x.clone().div(&y).mul(&y));
@@ -96,13 +96,16 @@ fn expand(eg: &Vec<(Integer, Integer, Integer, Integer)>) -> Vec<(Integer, Integ
     for (b,v,i,j) in eg.iter() {
         if v.is_zero() && i.is_zero() && j.is_zero() {
             ret.push((b.clone(), Integer::from(1), Integer::from(0), Integer::from(0)));
-            continue;
-        }
-        for k in i.to_usize().unwrap() .. j.to_usize().unwrap() + 1 {
-            let num = Integer::from(1);
-            let den = b.sub(v).complete().add(v.clone().mul(&k))
-                .mul(b.add(v.clone().mul(k.clone())));
-            ret.push((num, den, Integer::from(0), Integer::from(0)));
+        } else {
+            for k in i.to_usize().unwrap()..j.to_usize().unwrap() + 1 {
+                ret.push((
+                    Integer::from(1),
+                    b.clone().sub(v).add(v.clone().mul(&k))
+                        .mul(b.add(v.clone().mul(k.clone()))),
+                    Integer::from(0),
+                    Integer::from(0)
+                ));
+            }
         }
     }
     ret
