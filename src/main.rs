@@ -3,7 +3,7 @@ mod rpn;
 use crate::rpn::_parse_rpn;
 
 use std::io;
-use std::ops::{Add, Sub, Div, Mul, SubAssign};
+use std::ops::{Add, Sub, Div, Mul, SubAssign, Neg};
 use clap::Parser;
 use rug::{Complete, Integer, Rational};
 
@@ -49,17 +49,6 @@ struct Args {
 
 }
 
-fn low(x: &Integer, y: &Integer) -> (Integer, Integer) {
-    let b = if (y - x).complete() == Integer::from(1) {
-        x.clone()
-    } else {
-        x.clone().extended_gcd(y.clone(), Integer::new()).1.add(y).modulo(y)
-    };
-    let m = x.clone().mul(&b);
-    let a = m.clone().div(y);
-    Rational::from((a, b)).into_numer_denom()
-}
-
 fn merge(eg: &Vec<(Integer, Integer, Integer, Integer)>) -> Vec<(Integer, Integer, Integer, Integer)> {
     let mut i = 0_usize;
     let mut ret = vec![];
@@ -87,20 +76,18 @@ fn as_egyptian_fraction_symbolic(x0: &Integer, y0: &Integer, _expand: bool, ret:
     let mut x = x0.div(&gcd).complete();
     let mut y = y0.div(&gcd).complete();
     if x.ge(&y) {
-        ret.push((x.clone().div(&y), Integer::from(0), Integer::from(0), Integer::from(0)));
-        x.sub_assign(x.clone().div(&y).mul(y.clone()));
+        ret.push((x.clone().div(&y),0.into(), 0.into(), 0.into()));
+        x.sub_assign(x.clone().div(&y).mul(&y));
     }
-    while x.gt(&Integer::from(0)) && y.gt(&Integer::from(1)) {
-        let v = y.clone() - low(&x, &y).1;
+    while x.gt(&Integer::from(0)) && y.gt((&1).into()) {
+        let v = x.clone().extended_gcd(y.clone(), Integer::new()).1.neg().modulo(&y);
         let t = x.clone().mul(&y).div(x.clone().mul(&v).add(&Integer::from(1)));
-        let y_tv = y.clone() - t.clone().mul(&v);
-        ret.push((y_tv.clone(), v.clone(), Integer::from(1), t.clone()));
-        let den = y.clone().mul(y_tv);
-        let q = Rational::from((x.clone(),y.clone())) - Rational::from((t, den));
-        (x, y) = q.into_numer_denom();
+        let vm = y.clone() - t.clone().mul(&v);
+        ret.push((vm.clone(), v, Integer::from(1), t.clone()));
+        (x, y) = (x.clone().mul(&vm).sub(t).div(y), vm);
     }
     if !x.is_zero() {
-        ret.push((y.clone(), Integer::from(1), Integer::from(0), Integer::from(0)));
+        ret.push((y, Integer::from(1), Integer::from(0), Integer::from(0)));
     }
 }
 

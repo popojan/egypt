@@ -32,13 +32,7 @@ RawFractions[q_Rational] :=
         While[
             a > 0 && b > 1
             ,
-            v =
-                b - Denominator[1 / # Quotient[a #, b]]& @
-                    If[b - a == 1,
-                        a
-                        ,
-                        Mod[ExtendedGCD[a, b][[2, 1]] + b, b]
-                    ];
+            v = Mod[-ExtendedGCD[a, b][[2, 1]], b];
             t = Quotient[a b, 1 + a v];
             vm = b - t v;
             PrependTo[e, {vm, v, 1, t}];
@@ -125,8 +119,14 @@ EgyptianFractions[q_Rational, OptionsPattern[]] :=
             "Raw",
                 raw
             ,
+            "SplitRaw",
+                HalveAll[raw, OptionValue[MaxItems]]
+            ,
             "Expression",
                 FormatRawFractions @ raw
+            ,
+            "SplitExpression",
+                FormatRawFractions @ HalveAll[raw, OptionValue[MaxItems]]
             ,
             "Merge",
                 FixDuplicates @ MergeFractions @ Reverse @ EvaluateRawFractions
