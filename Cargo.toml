@@ -13,6 +13,7 @@ default-features = false
 features = ["integer", "rational", "std"]
 
 [profile.release]
-panic = "abort"
 opt-level = 3
+codegen-units = 1
+panic = "abort"
 debug = false
