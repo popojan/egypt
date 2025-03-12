@@ -33,9 +33,9 @@ Options:
 ```
 $ time ./egypt -s '2 9689 ^ 1 -' '2 9941 ^ 1 -'
 
-real    0m0.566s
-user    0m0.528s
-sys     0m0.036s
+real    0m0.345s
+user    0m0.296s
+sys     0m0.047s
 ```
 
 ```
@@ -102,6 +102,17 @@ When using legacy configuration `egypt --merge --limit <LIMIT> <NUMERATOR> <DENO
 largest denominator factor should not be greater than original denominator. Fast default limit is however `2`,
 which means that *bisecting* large symbolic sums can introduce bigger denominators. Moreover, `--limit` argument is itself
 limited by `usize`, as opposed to other `BigInt` inputs.
+
+## Relation to Continued Fractions
+
+```
+<< "wl/Egypt.wl"
+
+compare[Rational[p_, q_]] := {
+  Total /@ Partition[ Differences @ Convergents[ p/q ], 2],
+  ReleaseHold @ EgyptianFractions[ p/q , Method -> "Expression"]
+}
+```
 
 ---
 
