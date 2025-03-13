@@ -145,7 +145,7 @@ fn fix_duplicates(eg: &Vec<(Integer, Integer, Integer, Integer)>)
     let mut last_i = 0;
     let mut eg = eg.clone();
     while last_i < eg.len() {
-        eg.sort_by(|x, y| { x.1.cmp(&y.1)});
+        eg.sort_by(|x, y| { y.1.cmp(&x.1)});
         let mut ret = vec![];
         let mut cnt = 1;
         let mut prev = eg.first().unwrap();
@@ -179,6 +179,7 @@ fn fix_duplicates(eg: &Vec<(Integer, Integer, Integer, Integer)>)
         eg.clear();
         eg.extend(ret);
     }
+    eg.sort_by(|x, y| { x.1.cmp(&y.1)});
     eg
 }
 
