@@ -140,9 +140,13 @@ EgyptianFractions[q_Rational, OptionsPattern[]] :=
 
 Options[EgyptianFractions] = {Method -> "Classical", MaxItems -> 8}
 
-term[x_, j_] :=
+term0[x_, j_] :=
     1 / (1 + Sum[2 ^ (i - 1) x^i Factorial[j + i] / Factorial[j - i]
         / Factorial[2 i], {i, 1, j}])
+term[x_, k_] :=
+    1 / (     ChebyshevT[Ceiling[k/2],     x + 1]
+          (   ChebyshevU[  Floor[k/2],     x + 1]
+            - ChebyshevU[  Floor[k/2] - 1, x + 1]))
 
 sqrtt[x_, n_] :=
     1 + Sum[term[x, j], {j, 1, n}]
@@ -153,9 +157,19 @@ sqrth[x_, n_] :=
 sqrtl[x_, n_] :=
     Join[{1}, Table[term[x, j], {j, 1, n}]]
 
-pellsol[n_, c_] :=
+pellsol0[n_, c_] :=
     Normal @ First @ Solve[x^2 - n y^2 == 1, {x, y}, PositiveIntegers
         ] /. C[1] -> c
+
+(*https://cs.uwaterloo.ca/journals/JIS/VOL13/Wildberger/wildberger2.pdf*)
+
+pellsol[d_] := Module[
+  { a = 1, b = 0, c = -d, t, u = 1, v = 0, r = 0, s = 1},
+  While[t = a + b + b + c; If[t > 0,
+    a = t; b += c; u += v; r += s,
+    b += a; c = t; v += u; s += r];
+    Not[a == 1 && b == 0 && c == -d]
+  ]; {x -> u, y -> r} ]
 
 EgyptianSqrtApproximate[n_, OptionsPattern[]] :=
     Module[{sol, acc = OptionValue[Accuracy]},
