@@ -80,11 +80,11 @@ fn as_egyptian_fraction_symbolic(x0: &Integer, y0: &Integer, _expand: bool, ret:
         x.sub_assign(x.clone().div(&y).mul(&y));
     }
     while x.gt(&Integer::from(0)) && y.gt((&1).into()) {
-        let v = x.clone().extended_gcd(y.clone(), Integer::new()).1.neg().modulo(&y);
-        let t = x.clone().mul(&y).div(x.clone().mul(&v).add(&Integer::from(1)));
-        let vm = y.clone() - t.clone().mul(&v);
-        ret.push((vm.clone(), v, Integer::from(1), t.clone()));
-        (x, y) = (x.clone().mul(&vm).sub(t).div(y), vm);
+        let v = x.clone().neg().invert(&y).unwrap();
+        let t;
+        (t, x) = x.clone().div_rem( (x.clone() * &v + 1) / &y);
+        y -= v.clone() * &t;
+        ret.push((y.clone(), v, 1.into(), t));
     }
     if !x.is_zero() {
         ret.push((y, Integer::from(1), Integer::from(0), Integer::from(0)));
