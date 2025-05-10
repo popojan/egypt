@@ -171,7 +171,7 @@ pellsol[d_] := Module[
 
 EgyptianSqrtApproximate[n_, OptionsPattern[]] :=
     Module[{sol, acc = OptionValue[Accuracy]},
-        sol = pellsol[n, 1];
+        sol = pellsol[n];
         Switch[OptionValue[Method],
             "List",
                 {(x - 1) / y, sqrtl[x - 1, acc]} /. sol
