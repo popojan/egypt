@@ -123,7 +123,7 @@ This explains the monotonicity property: paired CF differences cancel the altern
 
 For theoretical background on the symbolic telescoping representation:
 
-- **Paper**: [Egyptian Fractions via Modular Inverse: Symbolic Telescoping Representation](https://github.com/popojan/orbit/blob/main/docs/papers/egyptian-fractions-telescoping.pdf)
+- **Paper**: [Egyptian Fractions via Modular Inverse: Symbolic Telescoping Representation](https://github.com/popojan/orbit/blob/main/docs/papers/egyptian-fractions-telescoping.tex)
 - **Wolfram implementation**: [`Orbit/Kernel/EgyptianFractions.wl`](https://github.com/popojan/orbit/blob/main/Orbit/Kernel/EgyptianFractions.wl)
 
 The symbolic representation `{u, v, i, j}` compresses consecutive unit fractions into
