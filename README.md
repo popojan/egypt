@@ -114,6 +114,23 @@ compare[Rational[p_, q_]] := {
 }
 ```
 
+**Theorem**: Egypt values equal paired differences of continued fraction convergents.
+This explains the monotonicity property: paired CF differences cancel the alternating sign pattern.
+
+---
+
+## Theory & Related Work
+
+For theoretical background on the symbolic telescoping representation:
+
+- **Paper**: [Egyptian Fractions via Modular Inverse: Symbolic Telescoping Representation](https://github.com/popojan/orbit/blob/main/docs/papers/egyptian-fractions-telescoping.pdf)
+- **Wolfram implementation**: [`Orbit/Kernel/EgyptianFractions.wl`](https://github.com/popojan/orbit/blob/main/Orbit/Kernel/EgyptianFractions.wl)
+
+The symbolic representation `{u, v, i, j}` compresses consecutive unit fractions into
+telescoping sums with closed form: `(j-i+1) / ((u-v+vi)(u+vj))`.
+
+This reduces complexity from O(numerator) expanded fractions to O(log denominator) symbolic tuples.
+
 ---
 
 ## Illustrations
