@@ -156,15 +156,17 @@ $ egypt "4729494 sqrt" 1 --pell -p 2048 | tail -1
 Egypt's raw output encodes CF convergent denominators directly as tuple parameters,
 making Pell extraction essentially free. Benchmarks on the cattle problem (D=4729494):
 
-| Method | Time (100 runs) |
-|--------|-----------------|
-| `egypt --pell` | **4.3 ms** |
-| PARI/GP `quadunit(4*D)` | 27.7 ms |
+| Method | Time |
+|--------|------|
+| Egypt (auto-doubling 64→512) | **8 ms** |
+| PARI/GP `quadunit(4*D)` | 27 ms |
 
-Egypt is **6.4× faster** than PARI/GP, a highly optimized C number theory library.
+Egypt is **3.5× faster** than PARI/GP, a highly optimized C number theory library.
+Benchmark includes precision doubling (64→128→256→512 bits) for fair comparison.
 
-**Note:** Precision (`-p`) must be sufficient to reach the fundamental solution.
-If no solution is found, increase precision (e.g., `-p 512`, `-p 2048`).
+See `scripts/bench_pell.sh` for reproducible benchmarks.
+
+**Note:** Precision (`-p`) must be sufficient. Use higher values for larger D.
 
 ## Note
 
