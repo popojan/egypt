@@ -163,6 +163,9 @@ making Pell extraction essentially free. Benchmarks on the cattle problem (D=472
 
 Egypt is **6.4× faster** than PARI/GP, a highly optimized C number theory library.
 
+**Note:** Precision (`-p`) must be sufficient to reach the fundamental solution.
+If no solution is found, increase precision (e.g., `-p 512`, `-p 2048`).
+
 ## Note
 
 > * returns rather small denominators
