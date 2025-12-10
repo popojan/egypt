@@ -125,11 +125,24 @@ For theoretical background on the symbolic telescoping representation:
 
 - **Paper**: [Egyptian Fractions via Modular Inverse: Symbolic Telescoping Representation](https://github.com/popojan/orbit/blob/main/docs/papers/egyptian-fractions-telescoping.tex)
 - **Wolfram implementation**: [`Orbit/Kernel/EgyptianFractions.wl`](https://github.com/popojan/orbit/blob/main/Orbit/Kernel/EgyptianFractions.wl)
+- **CF-Egypt Bijection (Proven Dec 2025)**: [Session documentation](https://github.com/popojan/orbit/blob/main/docs/sessions/2025-12-10-cf-egypt-equivalence/README.md)
+- **γ-Egypt Simplification**: [Characterization theorems](https://github.com/popojan/orbit/blob/main/docs/sessions/2025-12-10-cf-egypt-equivalence/gamma-egypt-simplification.md)
 
 The symbolic representation `{u, v, i, j}` compresses consecutive unit fractions into
 telescoping sums with closed form: `(j-i+1) / ((u-v+vi)(u+vj))`.
 
 This reduces complexity from O(numerator) expanded fractions to O(log denominator) symbolic tuples.
+
+### CF-Egypt Bijection (✅ Proven)
+
+For q = a/b with CF [0; a₁, a₂, ..., aₙ] and convergent denominators {q₀=1, q₁, ..., qₙ=b}:
+
+| Case | u_k | v_k | j_k |
+|------|-----|-----|-----|
+| Regular (k < ⌈n/2⌉ or n even) | q_{2k-2} | q_{2k-1} | a_{2k} |
+| Last tuple, odd CF | q_{n-1} | q_n - q_{n-1} | 1 |
+
+**Key insight:** XGCD quotients ARE CF coefficients, enabling single-pass computation.
 
 ---
 
