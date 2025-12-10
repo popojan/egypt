@@ -1,6 +1,6 @@
 mod rpn;
 
-use crate::rpn::_parse_rpn;
+use crate::rpn::{_parse_rpn, _parse_rpn_irrational};
 
 use std::io;
 use std::ops::{Add, Sub, Div, Mul, SubAssign, Neg};
@@ -47,6 +47,10 @@ struct Args {
     #[clap(short, long, value_parser, default_value_t = 8)]
     limit: usize,
 
+    /// Precision in bits for irrational/transcendental constants (pi, e, phi, etc.)
+    /// Higher precision = more CF terms = more Egypt tuples
+    #[clap(short, long, value_parser, default_value_t = 256)]
+    precision: u32,
 }
 
 fn merge(eg: &Vec<(Integer, Integer, Integer, Integer)>) -> Vec<(Integer, Integer, Integer, Integer)> {
@@ -99,12 +103,34 @@ fn convergent_denominators(cf: &[Integer]) -> Vec<Integer> {
     qs
 }
 
-/// XGCD-based Egyptian fraction computation using CF-Egypt bijection
-/// Complexity: O(log p) vs O(log² p) for ModInv approach
-fn as_egyptian_fraction_symbolic(x0: &Integer, y0: &Integer, _expand: bool, ret: &mut Vec<(Integer, Integer, Integer, Integer)>) {
+/// ModInv-based Egyptian fraction computation (original, faster)
+fn as_egyptian_fraction_symbolic_modinv(x0: &Integer, y0: &Integer, _expand: bool, ret: &mut Vec<(Integer, Integer, Integer, Integer)>) {
     let gcd = x0.clone().gcd(&y0);
     let mut x = x0.clone().div(&gcd);
     let mut y = y0.clone().div(&gcd);
+    if x.ge(&y) {
+        ret.push((x.clone().div(&y), 0.into(), 0.into(), 0.into()));
+        x.sub_assign(x.clone().div(&y).mul(&y));
+    }
+    while x.gt(&Integer::from(0)) && y.gt(&Integer::from(1)) {
+        let v = x.clone().neg().invert(&y).unwrap();
+        let t;
+        (t, x) = x.clone().div_rem((x.clone() * &v + 1) / &y);
+        y -= v.clone() * &t;
+        ret.push((y.clone(), v, 1.into(), t));
+    }
+    if !x.is_zero() {
+        ret.push((y, Integer::from(1), Integer::from(0), Integer::from(0)));
+    }
+}
+
+/// XGCD-based Egyptian fraction computation using CF-Egypt bijection
+/// Complexity: O(log p) vs O(log² p) for ModInv approach
+/// Required for irrational inputs (provides CF structure for stability analysis)
+fn as_egyptian_fraction_symbolic_cf(x0: &Integer, y0: &Integer, _expand: bool, ret: &mut Vec<(Integer, Integer, Integer, Integer)>) {
+    let gcd = x0.clone().gcd(&y0);
+    let mut x = x0.clone().div(&gcd);
+    let y = y0.clone().div(&gcd);
 
     // Handle integer part
     if x.ge(&y) {
@@ -156,6 +182,16 @@ fn as_egyptian_fraction_symbolic(x0: &Integer, y0: &Integer, _expand: bool, ret:
     }
 }
 
+/// Dispatcher: uses ModInv for rationals (faster), CF for irrationals (stability)
+fn as_egyptian_fraction_symbolic(x0: &Integer, y0: &Integer, expand: bool, ret: &mut Vec<(Integer, Integer, Integer, Integer)>) {
+    as_egyptian_fraction_symbolic_modinv(x0, y0, expand, ret)
+}
+
+/// CF version - use when stability analysis needed (irrationals)
+fn as_egyptian_fraction_symbolic_for_irrational(x0: &Integer, y0: &Integer, expand: bool, ret: &mut Vec<(Integer, Integer, Integer, Integer)>) {
+    as_egyptian_fraction_symbolic_cf(x0, y0, expand, ret)
+}
+
 fn expand(eg: &Vec<(Integer, Integer, Integer, Integer)>) -> Vec<(Integer, Integer, Integer, Integer)> {
     let mut ret = vec![];
     for (b,v,i,j) in eg.iter() {
@@ -187,6 +223,35 @@ fn as_egyptian_fraction(a:&Integer, b:&Integer, args: &Args)->Vec<(Integer, Inte
         res = halve_symbolic_sums(&res, limit);
         res = expand(&res);
         res.sort_by(|x, y| { x.1.cmp(&y.1)});
+        if args.merge {
+            if !args.reverse {
+                res.reverse();
+            }
+            res = merge(&res);
+        }
+        res = fix_duplicates(&res);
+    } else {
+        if args.bisect {
+            res = halve_symbolic_sums(&res, limit);
+        }
+    }
+    res
+}
+
+/// Egyptian fraction for irrationals: uses CF, sorts by fraction size
+/// No truncation - user controls precision, we output full CF expansion
+fn as_egyptian_fraction_irrational(a: &Integer, b: &Integer, args: &Args) -> Vec<(Integer, Integer, Integer, Integer)> {
+    let mut res = vec![];
+    as_egyptian_fraction_symbolic_for_irrational(&a, &b, args.reverse, &mut res);
+
+    // Sort by unit fraction size (large → small)
+    sort_by_fraction_size(&mut res);
+
+    let limit = args.limit.max(2);
+    if !args.raw {
+        res = halve_symbolic_sums(&res, limit);
+        res = expand(&res);
+        res.sort_by(|x, y| { x.1.cmp(&y.1)});  // expanded: sort by denominator
         if args.merge {
             if !args.reverse {
                 res.reverse();
@@ -284,6 +349,50 @@ fn halve_symbolic_sums(a: &Vec<(Integer, Integer, Integer, Integer)>, limit: usi
     }
     ret
 }
+/// Check if RPN expression contains irrational/transcendental constants
+fn contains_irrational(s: &str) -> bool {
+    let lower = s.to_lowercase();
+    let trimmed = lower.trim();
+    lower.contains("pi") ||
+    lower.contains(" e ") || lower.starts_with("e ") || lower.ends_with(" e") || trimmed == "e" ||
+    lower.contains("phi") || lower.contains("sqrt2") || lower.contains("gamma") ||
+    lower.contains("sqrt")  // sqrt of non-perfect square
+}
+
+/// Parse RPN, auto-detecting rational vs irrational input
+/// Returns (numerator, denominator, is_irrational)
+fn parse_rpn_auto(num_str: &str, den_str: &str, precision: u32) -> (Integer, Integer, bool) {
+    let is_irrational = contains_irrational(num_str) || contains_irrational(den_str);
+    if is_irrational {
+        // Each irrational expression returns (numerator, denominator) of its rational approximation
+        // For expression A / B, we compute: (num_A / den_A) / (num_B / den_B) = (num_A * den_B) / (den_A * num_B)
+        let (num_a, den_a) = _parse_rpn_irrational(num_str, precision);
+        let (num_b, den_b) = _parse_rpn_irrational(den_str, precision);
+        let final_num = (num_a * &den_b).abs();
+        let final_den = (den_a * &num_b).abs();
+        let gcd = final_num.clone().gcd(&final_den);
+        (final_num / &gcd, final_den / &gcd, true)
+    } else {
+        (_parse_rpn(num_str).abs(), _parse_rpn(den_str).abs(), false)
+    }
+}
+
+/// Calculate the smallest denominator a raw tuple produces (for sorting)
+/// For (u, v, i, j): smallest denom = (u-v+v*i)*(u+v*i) when i=1
+fn tuple_min_denominator(u: &Integer, v: &Integer) -> Integer {
+    // First unit fraction: 1/(u*(u+v))
+    u.clone() * (u.clone() + v)
+}
+
+/// Sort tuples by unit fraction size (large → small = small denominator first)
+fn sort_by_fraction_size(tuples: &mut Vec<(Integer, Integer, Integer, Integer)>) {
+    tuples.sort_by(|a, b| {
+        let denom_a = tuple_min_denominator(&a.0, &a.1);
+        let denom_b = tuple_min_denominator(&b.0, &b.1);
+        denom_a.cmp(&denom_b)  // smaller denominator = larger fraction = comes first
+    });
+}
+
 fn main() {
     let args = Args::parse();
 
@@ -296,13 +405,17 @@ fn main() {
                     continue;
                 }
 
-                let num = _parse_rpn(num_den[0]).abs();
-                let den = _parse_rpn(num_den[1]).abs();
+                let (num, den, is_irrational) = parse_rpn_auto(num_den[0], num_den[1], args.precision);
+                let fractions = if is_irrational {
+                    as_egyptian_fraction_irrational(&num, &den, &args)
+                } else {
+                    as_egyptian_fraction(&num, &den, &args)
+                };
                 if !args.silent {
                     let mut gt0 = false;
                     print!("{}\t{}\t", num.to_string(), den.to_string());
                     for (i, (a, b, c, d))
-                        in as_egyptian_fraction(&num, &den, &args).iter().enumerate() {
+                        in fractions.iter().enumerate() {
                         let is_natural = (args.raw && b.is_zero() && c.is_zero() && d.is_zero())
                             || (!args.raw && *b == Integer::from(1));
                         if i == 0 && is_natural {
@@ -333,8 +446,13 @@ fn main() {
             }
         }
     } else {
-        for (a, b, c, d) in as_egyptian_fraction(
-            &_parse_rpn(&args.numerator).abs(), &_parse_rpn(&args.denominator).abs(), &args).iter() {
+        let (num, den, is_irrational) = parse_rpn_auto(&args.numerator, &args.denominator, args.precision);
+        let fractions = if is_irrational {
+            as_egyptian_fraction_irrational(&num, &den, &args)
+        } else {
+            as_egyptian_fraction(&num, &den, &args)
+        };
+        for (a, b, c, d) in fractions.iter() {
             if !args.silent {
                 if !args.raw {
                     println!("{:?}\t{:?}", a, b);
@@ -344,5 +462,4 @@ fn main() {
             }
         }
     }
-    return;
 }

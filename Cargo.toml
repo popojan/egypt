@@ -1,6 +1,6 @@
 [package]
 name = "egypt"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2021"
 
 [dependencies]
@@ -10,7 +10,7 @@ num-prime = "0.4"
 [dependencies.rug]
 version = "1.27"
 default-features = false
-features = ["integer", "rational", "std"]
+features = ["integer", "rational", "float", "std"]
 
 [profile.release]
 opt-level = 3

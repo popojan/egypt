@@ -94,6 +94,40 @@ sys     0m0.002s
 * `egypt --limit 2 2023 2024`
     *   1 / 2 + 1 / 4 + 1 / 8 + 1 / 11 + 1 / 33 + 1 / 674 + 1 / 899 + 1 / 2442 + 1 / 4044 + 1 / 24938 + 1 / 2046264 + 1 / 2423704
 
+## Irrational / Transcendental Numbers
+
+Supports RPN expressions with constants: `pi`, `e`, `phi` (golden ratio), `sqrt2`, `gamma` (Euler-Mascheroni).
+
+```bash
+# Pi/4 as Egypt fractions (raw symbolic tuples)
+$ egypt pi 4 --raw -p 64
+1	1	1	3
+4	5	1	1
+9	14	1	15
+219	452	1	72
+32763	33215	1	9
+331698	364913	1	17
+6535219	6900132	1	2
+20335483	27235615	1	5
+```
+
+Each tuple `(u, v, i, j)` represents: `sum_{k=i}^{j} 1/((u-v+vk)(u+vk))`
+
+The `-p` flag controls precision in bits (default 256). Higher precision = more CF terms = more tuples.
+
+```bash
+# Golden ratio
+$ egypt phi 1 --raw -p 64 | head -5
+1	0	0	0
+1	1	1	1
+1	2	1	1
+2	3	1	1
+3	5	1	1
+```
+
+Note: For irrationals, output represents a finite-precision rational approximation.
+Early tuples are stable convergents of the true constant; later ones may diverge.
+
 ## Note
 
 > * returns rather small denominators
