@@ -51,6 +51,11 @@ struct Args {
     /// Higher precision = more CF terms = more Egypt tuples
     #[clap(short, long, value_parser, default_value_t = 256)]
     precision: u32,
+
+    /// Pell equation mode: output (q, p, norm) for sqrt(D)/1 input
+    /// Finds solutions to p² - D·q² = ±1
+    #[clap(long, value_parser, default_value_t = false)]
+    pell: bool,
 }
 
 fn merge(eg: &Vec<(Integer, Integer, Integer, Integer)>) -> Vec<(Integer, Integer, Integer, Integer)> {
@@ -349,6 +354,61 @@ fn halve_symbolic_sums(a: &Vec<(Integer, Integer, Integer, Integer)>, limit: usi
     }
     ret
 }
+/// Pell equation solver: extract (q, p, norm) from Egypt tuples
+/// Tuples encode q_{2k-2}, q_{2k-1} as u, v parameters
+/// Returns: Vec<(q, p, norm)> where norm = p² - D·q²
+fn solve_pell(tuples: &[(Integer, Integer, Integer, Integer)], d: &Integer) -> Vec<(Integer, Integer, Integer)> {
+    let mut results = vec![];
+
+    // Extract integer part (a0) and q values from tuples
+    let mut a0 = Integer::from(0);
+    let mut qs: Vec<Integer> = vec![];
+
+    for (u, v, i, j) in tuples {
+        if v.is_zero() && i.is_zero() && j.is_zero() {
+            // Integer part tuple
+            a0 = u.clone();
+        } else {
+            // Fractional tuple: u = q_{2k-2}, v = q_{2k-1}
+            if qs.is_empty() || qs.last() != Some(u) {
+                qs.push(u.clone());
+            }
+            qs.push(v.clone());
+        }
+    }
+
+    if a0.is_zero() {
+        return results;
+    }
+
+    // Compute p values using CF recurrence:
+    // p_{-1} = 1, p_0 = a0
+    // p_n = a_n * p_{n-1} + p_{n-2}
+    // where a_n = (q_n - q_{n-2}) / q_{n-1}
+    let mut ps = vec![Integer::from(1), a0.clone()];
+
+    // First: q_0 = 1, p_0 = a0
+    let norm0 = a0.clone().square() - d;
+    results.push((Integer::from(1), a0.clone(), norm0));
+
+    for n in 1..qs.len() {
+        let a_n = if n == 1 {
+            qs[1].clone()
+        } else {
+            (qs[n].clone() - &qs[n - 2]) / &qs[n - 1]
+        };
+
+        let p_n = a_n * &ps[ps.len() - 1] + &ps[ps.len() - 2];
+        ps.push(p_n.clone());
+
+        let q = qs[n].clone();
+        let norm = p_n.clone().square() - d * q.clone().square();
+        results.push((q, p_n, norm));
+    }
+
+    results
+}
+
 /// Check if RPN expression contains irrational/transcendental constants
 fn contains_irrational(s: &str) -> bool {
     let lower = s.to_lowercase();
@@ -447,19 +507,80 @@ fn main() {
         }
     } else {
         let (num, den, is_irrational) = parse_rpn_auto(&args.numerator, &args.denominator, args.precision);
-        let fractions = if is_irrational {
-            as_egyptian_fraction_irrational(&num, &den, &args)
-        } else {
-            as_egyptian_fraction(&num, &den, &args)
-        };
-        for (a, b, c, d) in fractions.iter() {
+
+        // Pell mode: extract D from "D sqrt" pattern
+        if args.pell {
+            // Parse D from numerator (expecting "D sqrt" RPN)
+            let d = extract_pell_d(&args.numerator);
+            if d.is_none() {
+                eprintln!("Error: --pell requires input like 'egypt \"D sqrt\" 1 --pell'");
+                std::process::exit(2);
+            }
+            let d = d.unwrap();
+
+            // Get raw tuples (always use raw mode internally for Pell)
+            let mut res = vec![];
+            as_egyptian_fraction_symbolic_for_irrational(&num, &den, args.reverse, &mut res);
+            sort_by_fraction_size(&mut res);
+
+            // Solve Pell equation
+            let pell_results = solve_pell(&res, &d);
+
             if !args.silent {
-                if !args.raw {
-                    println!("{:?}\t{:?}", a, b);
-                } else {
-                    println!("{:?}\t{:?}\t{:?}\t{:?}", a, b, c, d);
+                println!("q\tp\tnorm");
+                let mut found_fundamental = false;
+                let mut found_quasi = false;
+
+                for (q, p, norm) in pell_results {
+                    println!("{}\t{}\t{}", q, p, norm);
+
+                    if !found_quasi && norm == Integer::from(-1) {
+                        eprintln!("# Quasi-solution (norm=-1): p={}, q={}", p, q);
+                        found_quasi = true;
+                    }
+                    if !found_fundamental && norm == Integer::from(1) {
+                        eprintln!("# Fundamental solution (norm=1): p={}, q={}", p, q);
+                        found_fundamental = true;
+                        break;
+                    }
+                }
+
+                if !found_fundamental {
+                    if found_quasi {
+                        eprintln!("# No fundamental solution, but quasi-solution exists");
+                    } else {
+                        eprintln!("# No Pell solution found (increase -p precision)");
+                    }
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            let fractions = if is_irrational {
+                as_egyptian_fraction_irrational(&num, &den, &args)
+            } else {
+                as_egyptian_fraction(&num, &den, &args)
+            };
+            for (a, b, c, d) in fractions.iter() {
+                if !args.silent {
+                    if !args.raw {
+                        println!("{:?}\t{:?}", a, b);
+                    } else {
+                        println!("{:?}\t{:?}\t{:?}\t{:?}", a, b, c, d);
+                    }
                 }
             }
         }
+    }
+}
+
+/// Extract D from "D sqrt" RPN pattern for Pell mode
+fn extract_pell_d(s: &str) -> Option<Integer> {
+    let parts: Vec<&str> = s.trim().split_whitespace().collect();
+    if parts.len() >= 2 && parts.last() == Some(&"sqrt") {
+        // Try to parse the number before "sqrt"
+        let num_str = parts[..parts.len()-1].join(" ");
+        Some(_parse_rpn(&num_str))
+    } else {
+        None
     }
 }
