@@ -71,23 +71,88 @@ fn merge(eg: &Vec<(Integer, Integer, Integer, Integer)>) -> Vec<(Integer, Intege
     ret
 }
 
+/// Compute CF quotients via single GCD pass: O(log p) instead of O(log² p)
+fn cf_quotients(mut a: Integer, mut b: Integer) -> Vec<Integer> {
+    let mut quotients = vec![];
+    while !b.is_zero() {
+        let (q, r) = a.div_rem(b.clone());
+        quotients.push(q);
+        a = b;
+        b = r;
+    }
+    quotients
+}
+
+/// Build convergent denominators from CF quotients
+fn convergent_denominators(cf: &[Integer]) -> Vec<Integer> {
+    if cf.is_empty() {
+        return vec![Integer::from(1)];
+    }
+    let mut qs = vec![Integer::from(1)];
+    if cf.len() > 1 {
+        qs.push(cf[1].clone());
+    }
+    for i in 2..cf.len() {
+        let next = cf[i].clone() * &qs[qs.len() - 1] + &qs[qs.len() - 2];
+        qs.push(next);
+    }
+    qs
+}
+
+/// XGCD-based Egyptian fraction computation using CF-Egypt bijection
+/// Complexity: O(log p) vs O(log² p) for ModInv approach
 fn as_egyptian_fraction_symbolic(x0: &Integer, y0: &Integer, _expand: bool, ret: &mut Vec<(Integer, Integer, Integer, Integer)>) {
     let gcd = x0.clone().gcd(&y0);
     let mut x = x0.clone().div(&gcd);
     let mut y = y0.clone().div(&gcd);
+
+    // Handle integer part
     if x.ge(&y) {
-        ret.push((x.clone().div(&y),0.into(), 0.into(), 0.into()));
+        ret.push((x.clone().div(&y), 0.into(), 0.into(), 0.into()));
         x.sub_assign(x.clone().div(&y).mul(&y));
     }
-    while x.gt(&Integer::from(0)) && y.gt((&1).into()) {
-        let v = x.clone().neg().invert(&y).unwrap();
-        let t;
-        (t, x) = x.clone().div_rem( (x.clone() * &v + 1) / &y);
-        y -= v.clone() * &t;
-        ret.push((y.clone(), v, 1.into(), t));
+
+    if x.is_zero() {
+        return;
     }
-    if !x.is_zero() {
-        ret.push((y, Integer::from(1), Integer::from(0), Integer::from(0)));
+
+    // Get CF quotients in single pass
+    let cf = cf_quotients(x.clone(), y.clone());
+    // n = number of partial quotients (CF length excluding leading 0)
+    let n = cf.len() - 1;
+
+    if n == 0 {
+        // CF = [0], meaning x = 0 (should have returned earlier)
+        return;
+    }
+
+    if n == 1 {
+        // CF = [0; a_1], meaning x/y = 1/y → unit fraction
+        // Raw tuple (1, y-1, 1, 1): T = 1/((1)(1+y-1)) = 1/y
+        ret.push((Integer::from(1), y.clone() - 1, Integer::from(1), Integer::from(1)));
+        return;
+    }
+
+    // Build convergent denominators
+    let qs = convergent_denominators(&cf);
+    let num_tuples = (n + 1) / 2;
+
+    // Apply CF-Egypt bijection formula (0-based indexing)
+    // Formula: u_k = q_{2k-2}, v_k = q_{2k-1}, j_k = a_{2k}
+    // In 0-based: u = qs[2k-2], v = qs[2k-1], j = cf[2k] (since cf[i] = a_i)
+    for k in 1..=num_tuples {
+        if k < num_tuples || n % 2 == 0 {
+            // Regular case: (q_{2k-2}, q_{2k-1}, 1, a_{2k})
+            let u = qs[2 * k - 2].clone();
+            let v = qs[2 * k - 1].clone();
+            let j = cf[2 * k].clone();  // a_{2k} = cf[2k] in 0-based
+            ret.push((u, v, Integer::from(1), j));
+        } else {
+            // Last tuple, odd CF: (q_{n-1}, q_n - q_{n-1}, 1, 1)
+            let u = qs[n - 1].clone();
+            let v = qs[n].clone() - &qs[n - 1];
+            ret.push((u, v, Integer::from(1), Integer::from(1)));
+        }
     }
 }
 
