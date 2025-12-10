@@ -128,6 +128,29 @@ $ egypt phi 1 --raw -p 64 | head -5
 Note: For irrationals, output represents a finite-precision rational approximation.
 Early tuples are stable convergents of the true constant; later ones may diverge.
 
+### Pell Equation Solver
+
+Post-process Egypt output to find Pell solutions (p² - D·q² = ±1):
+
+```bash
+# sqrt(13): fundamental solution 649² - 13·180² = 1
+$ egypt "13 sqrt" 1 --raw -p 64 | python3 scripts/pell.py 13
+q	p	norm
+1	3	-4
+1	4	3
+2	7	-3
+3	11	4
+5	18	-1
+...
+180	649	1
+# Fundamental solution (norm=1): p=649, q=180
+
+# Cattle problem (D=4729494): 41-digit solution in 22ms
+$ time egypt "4729494 sqrt" 1 --raw -p 2048 | python3 scripts/pell.py 4729494 | tail -1
+50549485234315033074477819735540408986340	109931986732829734979866232821433543901088049	1
+real	0m0.022s
+```
+
 ## Note
 
 > * returns rather small denominators
