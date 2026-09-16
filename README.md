@@ -30,6 +30,16 @@ Options:
   -V, --version        Print version
 ```
 
+## Tests
+
+```
+cargo test --release
+```
+
+Unit tests cover the RPN parser and the expansion invariants (distinct unit fractions summing
+to the input, the same checks as `wl/test.wls`). `tests/cli.rs` runs the binary with each switch
+against golden outputs in `tests/golden`; regenerate them with `UPDATE_GOLDEN=1 cargo test --release --test cli`.
+
 ## Performance
 ```
 $ time ./egypt -s '2 9689 ^ 1 -' '2 9941 ^ 1 -'
