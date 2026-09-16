@@ -276,47 +276,29 @@ fn as_egyptian_fraction_irrational(a: &Integer, b: &Integer, args: &Args) -> Vec
     res
 }
 
+/// Replace every run of n equal terms by the expansion of n times that term until no run is left
 fn fix_duplicates(eg: &Vec<(Integer, Integer, Integer, Integer)>)
     -> Vec<(Integer, Integer, Integer, Integer)> {
-      if eg.is_empty() {
-          return eg.clone();
-      }
-    let mut last_i = 0;
     let mut eg = eg.clone();
-    while last_i < eg.len() {
+    loop {
         eg.sort_by(|x, y| { y.1.cmp(&x.1)});
-        let mut ret = vec![];
-        let mut cnt = 1;
-        let mut prev = eg.first().unwrap();
-        last_i = eg.len();
-        for (i, current) in eg.iter().enumerate().skip(1) {
-            if current == prev {
-                cnt += 1;
-            } else if cnt > 1 {
-                last_i = i;
-                break;
-            } else {
-                cnt = 1;
-                ret.push(prev.clone());
-                prev = current;
+        let mut run = None;
+        let mut i = 0;
+        while i < eg.len() {
+            let mut j = i + 1;
+            while j < eg.len() && eg[j] == eg[i] {
+                j += 1;
             }
+            if j - i > 1 {
+                run = Some((i, j));
+                break;
+            }
+            i = j;
         }
-        if last_i < eg.len() {
-            let a = Integer::from(cnt);
-            let b = prev.clone();
-            let gcd = a.clone().gcd(&b.1);
-            let mut new = vec![];
-            as_egyptian_fraction_symbolic(&a.div(&gcd), &b.1.div(&gcd), false, &mut new);
-            ret.extend(expand(&new));
-            ret.extend(eg[last_i..eg.len()].to_vec());
-        } else {
-            ret.push(prev.clone());
-        }
-        if eg == ret {
-            break;
-        }
-        eg.clear();
-        eg.extend(ret);
+        let Some((i, j)) = run else { break };
+        let mut new = vec![];
+        as_egyptian_fraction_symbolic(&Integer::from(j - i), &eg[i].1, false, &mut new);
+        eg.splice(i..j, expand(&new));
     }
     eg.sort_by(|x, y| { x.1.cmp(&y.1)});
     eg
@@ -626,6 +608,8 @@ mod tests {
         let inputs = [
             ("7", "19"), ("2023", "2024"), ("999999", "1000000"), ("58", "3511471"),
             ("5", "3"), ("2 107 ^ 1 -", "2 127 ^ 1 -"), ("1 3 /", "0.7"), ("49 sqrt", "11"),
+            // at -l 2 the duplicate 1/37 expands to 1/19 + 1/703 and 1/19 is itself a repeat
+            ("24285564808518", "223702468834263"),
         ];
         let modes: [&[&str]; 4] = [&[], &["-g"], &["-m"], &["-m", "-r"]];
         for (a, b) in inputs {
