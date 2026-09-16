@@ -1,6 +1,6 @@
 mod rpn;
 
-use crate::rpn::{_parse_rpn, _parse_rpn_irrational};
+use crate::rpn::{_parse_rpn, parse_rpn};
 
 use std::io;
 use std::ops::{Add, Sub, Div, Mul, SubAssign, Neg};
@@ -419,22 +419,20 @@ fn contains_irrational(s: &str) -> bool {
     lower.contains("sqrt")  // sqrt of non-perfect square
 }
 
-/// Parse RPN, auto-detecting rational vs irrational input
+/// Evaluate both RPN expressions as rationals and divide: (a/b) / (c/d) = ad / bc
 /// Returns (numerator, denominator, is_irrational)
 fn parse_rpn_auto(num_str: &str, den_str: &str, precision: u32) -> (Integer, Integer, bool) {
     let is_irrational = contains_irrational(num_str) || contains_irrational(den_str);
-    if is_irrational {
-        // Each irrational expression returns (numerator, denominator) of its rational approximation
-        // For expression A / B, we compute: (num_A / den_A) / (num_B / den_B) = (num_A * den_B) / (den_A * num_B)
-        let (num_a, den_a) = _parse_rpn_irrational(num_str, precision);
-        let (num_b, den_b) = _parse_rpn_irrational(den_str, precision);
-        let final_num = (num_a * &den_b).abs();
-        let final_den = (den_a * &num_b).abs();
-        let gcd = final_num.clone().gcd(&final_den);
-        (final_num / &gcd, final_den / &gcd, true)
-    } else {
-        (_parse_rpn(num_str).abs(), _parse_rpn(den_str).abs(), false)
+    let (num_a, den_a) = parse_rpn(num_str, precision);
+    let (num_b, den_b) = parse_rpn(den_str, precision);
+    let final_num = (num_a * &den_b).abs();
+    let final_den = (den_a * &num_b).abs();
+    if final_den.is_zero() {
+        eprintln!("Error: denominator evaluates to zero");
+        std::process::exit(2);
     }
+    let gcd = final_num.clone().gcd(&final_den);
+    (final_num / &gcd, final_den / &gcd, is_irrational)
 }
 
 /// Calculate the smallest denominator a raw tuple produces (for sorting)
@@ -582,5 +580,20 @@ fn extract_pell_d(s: &str) -> Option<Integer> {
         Some(_parse_rpn(&num_str))
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rug::ops::Pow;
+
+    #[test]
+    fn big_literals_parse_exactly() {
+        let (n, d, irrational) = parse_rpn_auto(
+            "162259276829213363391578010288127", "170141183460469231731687303715884105727", 64);
+        assert_eq!(n, Integer::from(2u32).pow(107u32) - 1u32);
+        assert_eq!(d, Integer::from(2u32).pow(127u32) - 1u32);
+        assert!(!irrational);
     }
 }
