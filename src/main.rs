@@ -29,6 +29,10 @@ struct Args {
     #[clap(long, value_parser, default_value_t = false)]
     bisect: bool,
 
+    /// Split long symbolic sums greedily (largest unit fraction first) instead of symmetrically
+    #[clap(short, long, value_parser, default_value_t = false)]
+    greedy: bool,
+
     /// No output
     #[clap(short, long, value_parser, default_value_t = false)]
     silent: bool,
@@ -225,7 +229,7 @@ fn as_egyptian_fraction(a:&Integer, b:&Integer, args: &Args)->Vec<(Integer, Inte
         args.reverse, &mut res);
     let limit = args.limit.max(2);
     if !args.raw {
-        res = halve_symbolic_sums(&res, limit);
+        res = halve_symbolic_sums(&res, limit, args.greedy);
         res = expand(&res);
         res.sort_by(|x, y| { x.1.cmp(&y.1)});
         if args.merge {
@@ -237,7 +241,7 @@ fn as_egyptian_fraction(a:&Integer, b:&Integer, args: &Args)->Vec<(Integer, Inte
         res = fix_duplicates(&res);
     } else {
         if args.bisect {
-            res = halve_symbolic_sums(&res, limit);
+            res = halve_symbolic_sums(&res, limit, args.greedy);
         }
     }
     res
@@ -254,7 +258,7 @@ fn as_egyptian_fraction_irrational(a: &Integer, b: &Integer, args: &Args) -> Vec
 
     let limit = args.limit.max(2);
     if !args.raw {
-        res = halve_symbolic_sums(&res, limit);
+        res = halve_symbolic_sums(&res, limit, args.greedy);
         res = expand(&res);
         res.sort_by(|x, y| { x.1.cmp(&y.1)});  // expanded: sort by denominator
         if args.merge {
@@ -266,7 +270,7 @@ fn as_egyptian_fraction_irrational(a: &Integer, b: &Integer, args: &Args) -> Vec
         res = fix_duplicates(&res);
     } else {
         if args.bisect {
-            res = halve_symbolic_sums(&res, limit);
+            res = halve_symbolic_sums(&res, limit, args.greedy);
         }
     }
     res
@@ -325,7 +329,7 @@ fn calculate_raw_sum(u:&Integer, v:&Integer, i:&Integer, j:&Integer) -> (Integer
     (num.div(&gcd), den.div(&gcd))
 }
 
-fn halve_symbolic_sums(a: &Vec<(Integer, Integer, Integer, Integer)>, limit: usize)
+fn halve_symbolic_sums(a: &Vec<(Integer, Integer, Integer, Integer)>, limit: usize, greedy: bool)
     -> Vec<(Integer, Integer, Integer, Integer)>
 {
     let mut stack = a.clone();
@@ -339,7 +343,15 @@ fn halve_symbolic_sums(a: &Vec<(Integer, Integer, Integer, Integer)>, limit: usi
             ret.push((u, v, i, j));
         } else {
             let (a, b) = calculate_raw_sum(&u, &v, &i, &j);
-            if a.is_odd() {
+            if greedy {
+                // largest unit fraction 1/d <= a/b; remainder numerator is < a, so this terminates
+                let d = (b.clone() + &a - 1u32) / &a;
+                ret.push((Integer::from(1), d.clone() - 1u32, Integer::from(1), Integer::from(1)));
+                let num = a * &d - &b;
+                if !num.is_zero() {
+                    as_egyptian_fraction_symbolic(&num, &(b * &d), false, &mut stack);
+                }
+            } else if a.is_odd() {
                 let a1 = a.sub(&Integer::from(1)).div(&two);
                 let a2 = a1.clone().add(&Integer::from(1));
                 as_egyptian_fraction_symbolic(&a1, &b, false, &mut stack);
@@ -587,6 +599,45 @@ fn extract_pell_d(s: &str) -> Option<Integer> {
 mod tests {
     use super::*;
     use rug::ops::Pow;
+    use std::collections::HashSet;
+
+    /// Expansion must sum exactly to the input and use each unit fraction once
+    fn check(cli: &[&str]) {
+        let args = Args::parse_from(std::iter::once("egypt").chain(cli.iter().copied()));
+        let (num, den, irrational) = parse_rpn_auto(&args.numerator, &args.denominator, args.precision);
+        let fractions = if irrational {
+            as_egyptian_fraction_irrational(&num, &den, &args)
+        } else {
+            as_egyptian_fraction(&num, &den, &args)
+        };
+        let mut sum = Rational::new();
+        let mut seen = HashSet::new();
+        for (a, b, _, _) in &fractions {
+            sum += Rational::from((a.clone(), b.clone()));
+            if *a == 1 {
+                assert!(seen.insert(b.clone()), "duplicate 1/{} in {:?}", b, cli);
+            }
+        }
+        assert_eq!(sum, Rational::from((num, den)), "{:?}", cli);
+    }
+
+    #[test]
+    fn expansions_sum_to_input_with_distinct_terms() {
+        let inputs = [
+            ("7", "19"), ("2023", "2024"), ("999999", "1000000"), ("58", "3511471"),
+            ("5", "3"), ("2 107 ^ 1 -", "2 127 ^ 1 -"), ("1 3 /", "0.7"), ("49 sqrt", "11"),
+        ];
+        let modes: [&[&str]; 4] = [&[], &["-g"], &["-m"], &["-m", "-r"]];
+        for (a, b) in inputs {
+            for limit in ["2", "8"] {
+                for mode in modes {
+                    let mut cli = vec!["-l", limit, a, b];
+                    cli.extend_from_slice(mode);
+                    check(&cli);
+                }
+            }
+        }
+    }
 
     #[test]
     fn big_literals_parse_exactly() {
