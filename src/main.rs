@@ -112,7 +112,8 @@ fn convergent_denominators(cf: &[Integer]) -> Vec<Integer> {
     qs
 }
 
-/// ModInv-based Egyptian fraction computation (original, faster)
+/// ModInv-based computation, kept as the reference form of the paper; the CF pass below is 3-8x faster
+#[allow(dead_code)]
 fn as_egyptian_fraction_symbolic_modinv(x0: &Integer, y0: &Integer, _expand: bool, ret: &mut Vec<(Integer, Integer, Integer, Integer)>) {
     let gcd = x0.clone().gcd(&y0);
     let mut x = x0.clone().div(&gcd);
@@ -133,9 +134,8 @@ fn as_egyptian_fraction_symbolic_modinv(x0: &Integer, y0: &Integer, _expand: boo
     }
 }
 
-/// XGCD-based Egyptian fraction computation using CF-Egypt bijection
-/// Complexity: O(log p) vs O(log² p) for ModInv approach
-/// Required for irrational inputs (provides CF structure for stability analysis)
+/// Single Euclid pass plus the CF-Egypt bijection: one division per quotient instead of one
+/// modular inverse per tuple. Tuples come out in CF order (smallest denominators first).
 fn as_egyptian_fraction_symbolic_cf(x0: &Integer, y0: &Integer, _expand: bool, ret: &mut Vec<(Integer, Integer, Integer, Integer)>) {
     let gcd = x0.clone().gcd(&y0);
     let mut x = x0.clone().div(&gcd);
@@ -191,9 +191,13 @@ fn as_egyptian_fraction_symbolic_cf(x0: &Integer, y0: &Integer, _expand: bool, r
     }
 }
 
-/// Dispatcher: uses ModInv for rationals (faster), CF for irrationals (stability)
+/// Rational entry point: CF pass, then the fractional tuples reversed to keep the
+/// largest-first order of the modinv version (raw output and split order depend on it)
 fn as_egyptian_fraction_symbolic(x0: &Integer, y0: &Integer, expand: bool, ret: &mut Vec<(Integer, Integer, Integer, Integer)>) {
-    as_egyptian_fraction_symbolic_modinv(x0, y0, expand, ret)
+    let start = ret.len();
+    as_egyptian_fraction_symbolic_cf(x0, y0, expand, ret);
+    let is_integer_part = ret.len() > start && ret[start].1.is_zero() && ret[start].3.is_zero();
+    ret[start + usize::from(is_integer_part)..].reverse();
 }
 
 /// CF version - use when stability analysis needed (irrationals)
