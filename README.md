@@ -18,16 +18,19 @@ Arguments:
   [DENOMINATOR]  [default: 1]
 
 Options:
-  -r, --reverse        Reverse merge strategy
-  -m, --merge          Extra O(n^2) merge step possibly reducing number of terms
-      --raw            Output minimal number of raw quadruplets (aka symbolic sums)
-      --bisect         Output raw quadruplets bisected according to --limit
-  -g, --greedy         Split long symbolic sums greedily (largest unit fraction first) instead of symmetrically
-  -s, --silent         No output
-      --batch          Batch mode (expects numerator and denominator on each line of stdin)
-  -l, --limit <LIMIT>  Maximum number of terms for breaking large symbolic sums [default: 8]
-  -h, --help           Print help
-  -V, --version        Print version
+  -r, --reverse                Reverse merge strategy
+  -m, --merge                  Extra O(n^2) merge step possibly reducing number of terms
+      --raw                    Output minimal number of raw quadruplets (aka symbolic sums)
+      --bisect                 Output raw quadruplets bisected according to --limit
+  -g, --greedy                 Split long symbolic sums greedily (largest unit fraction first) instead of symmetrically
+  -s, --silent                 No output
+  -x, --hex                    Print integers in hexadecimal (decimal conversion dominates large outputs)
+      --batch                  Batch mode (expects numerator and denominator on each line of stdin)
+  -l, --limit <LIMIT>          Maximum number of terms for breaking large symbolic sums [default: 8]
+  -p, --precision <PRECISION>  Precision in bits for irrational/transcendental constants (pi, e, phi, etc.) Higher precision = more CF terms = more Egypt tuples [default: 256]
+      --pell                   Pell equation mode: output (q, p, norm) for sqrt(D)/1 input Finds solutions to p² - D·q² = ±1
+  -h, --help                   Print help
+  -V, --version                Print version
 ```
 
 ## Tests
@@ -41,6 +44,9 @@ to the input, the same checks as `wl/test.wls`). `tests/cli.rs` runs the binary 
 against golden outputs in `tests/golden`; regenerate them with `UPDATE_GOLDEN=1 cargo test --release --test cli`.
 
 ## Performance
+
+Decimal conversion dominates large outputs; `-x/--hex` prints every integer in hexadecimal instead
+(about 60% less time on 10k-bit inputs, 94% on `--raw` at 100k bits).
 ```
 $ time ./egypt -s '2 9689 ^ 1 -' '2 9941 ^ 1 -'
 

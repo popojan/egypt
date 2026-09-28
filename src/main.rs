@@ -2,7 +2,7 @@ mod rpn;
 
 use crate::rpn::{_parse_rpn, parse_rpn};
 
-use std::io;
+use std::io::{self, BufWriter, StdoutLock, Write};
 use std::ops::{Add, Sub, Div, Mul, SubAssign, Neg};
 use clap::Parser;
 use rug::{Complete, Integer, Rational};
@@ -36,6 +36,10 @@ struct Args {
     /// No output
     #[clap(short, long, value_parser, default_value_t = false)]
     silent: bool,
+
+    /// Print integers in hexadecimal (decimal conversion dominates large outputs)
+    #[clap(short = 'x', long, value_parser, default_value_t = false)]
+    hex: bool,
 
     /// Batch mode (expects numerator and denominator on each line of stdin)
     #[clap(long, value_parser, default_value_t = false)]
@@ -449,15 +453,25 @@ fn sort_by_fraction_size(tuples: &mut Vec<(Integer, Integer, Integer, Integer)>)
     });
 }
 
+/// Decimal conversion is superlinear and dominates large outputs; hex is linear
+fn fmt_int(i: &Integer, hex: bool) -> String {
+    if hex { format!("{:x}", i) } else { i.to_string() }
+}
+
+fn stdout_writer() -> BufWriter<StdoutLock<'static>> {
+    BufWriter::with_capacity(1 << 20, io::stdout().lock())
+}
+
 fn main() {
     let args = Args::parse();
 
     if args.batch {
+        let mut out = stdout_writer();
         for line in io::stdin().lines() {
             if let Ok(line) = line {
                 let num_den = line.split("\t").take(2).collect::<Vec<&str>>();
                 if num_den.len() < 2 {
-                    println!("expecting tab delimited numerator and denominator");
+                    writeln!(out, "expecting tab delimited numerator and denominator").unwrap();
                     continue;
                 }
 
@@ -468,37 +482,32 @@ fn main() {
                     as_egyptian_fraction(&num, &den, &args)
                 };
                 if !args.silent {
+                    let hex = args.hex;
                     let mut gt0 = false;
-                    print!("{}\t{}\t", num.to_string(), den.to_string());
-                    for (i, (a, b, c, d))
-                        in fractions.iter().enumerate() {
+                    write!(out, "{}\t{}\t", fmt_int(&num, hex), fmt_int(&den, hex)).unwrap();
+                    for (i, (a, b, c, d)) in fractions.iter().enumerate() {
                         let is_natural = (args.raw && b.is_zero() && c.is_zero() && d.is_zero())
                             || (!args.raw && *b == Integer::from(1));
+                        let term = if args.raw {
+                            format!("{},{},{},{}", fmt_int(a, hex), fmt_int(b, hex), fmt_int(c, hex), fmt_int(d, hex))
+                        } else {
+                            fmt_int(b, hex)
+                        };
                         if i == 0 && is_natural {
-                            print!("{}\t", a);
+                            write!(out, "{}\t", fmt_int(a, hex)).unwrap();
                             gt0 = true;
                         } else if i == 0 {
-                            if !args.raw {
-                                print!("0\t{}", b);
-                            } else {
-                                print!("0\t{},{},{},{}", a, b, c, d);
-                            }
+                            write!(out, "0\t{}", term).unwrap();
                         } else if i == 1 && gt0 {
-                            if args.raw {
-                                print!("{},{},{},{}", a, b, c, d);
-                            } else {
-                                print!("{}", b);
-                            }
+                            write!(out, "{}", term).unwrap();
                         } else {
-                            if args.raw {
-                                print!(" {},{},{},{}", a, b, c, d);
-                            } else {
-                                print!(" {}", b);
-                            }
+                            write!(out, " {}", term).unwrap();
                         }
                     }
-                    print!("\n");
+                    writeln!(out).unwrap();
                 }
+                // one line per input, so a coprocess feeding stdin sees each answer at once
+                out.flush().unwrap();
             }
         }
     } else {
@@ -528,7 +537,7 @@ fn main() {
                 let mut found_quasi = false;
 
                 for (q, p, norm) in pell_results {
-                    println!("{}\t{}\t{}", q, p, norm);
+                    println!("{}\t{}\t{}", fmt_int(&q, args.hex), fmt_int(&p, args.hex), fmt_int(&norm, args.hex));
 
                     if !found_quasi && norm == Integer::from(-1) {
                         eprintln!("# Quasi-solution (norm=-1): p={}, q={}", p, q);
@@ -556,14 +565,16 @@ fn main() {
             } else {
                 as_egyptian_fraction(&num, &den, &args)
             };
-            for (a, b, c, d) in fractions.iter() {
-                if !args.silent {
-                    if !args.raw {
-                        println!("{:?}\t{:?}", a, b);
+            if !args.silent {
+                let (hex, mut out) = (args.hex, stdout_writer());
+                for (a, b, c, d) in fractions.iter() {
+                    if args.raw {
+                        writeln!(out, "{}\t{}\t{}\t{}", fmt_int(a, hex), fmt_int(b, hex), fmt_int(c, hex), fmt_int(d, hex)).unwrap();
                     } else {
-                        println!("{:?}\t{:?}\t{:?}\t{:?}", a, b, c, d);
+                        writeln!(out, "{}\t{}", fmt_int(a, hex), fmt_int(b, hex)).unwrap();
                     }
                 }
+                out.flush().unwrap();
             }
         }
     }

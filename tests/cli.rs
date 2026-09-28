@@ -116,6 +116,28 @@ fn greedy_switch() {
 }
 
 #[test]
+fn hex_switch() {
+    let args = ["-l", "8", "2 107 ^ 1 -", "2 127 ^ 1 -"];
+    let dec = egypt(&args);
+    let hex_args: Vec<&str> = [&["-x"][..], &args[..]].concat();
+    let hex = egypt(&hex_args);
+    let decoded: String = hex
+        .stdout
+        .lines()
+        .map(|line| {
+            let cols: Vec<String> = line
+                .split('\t')
+                .map(|c| Integer::from_str_radix(c, 16).unwrap().to_string())
+                .collect();
+            cols.join("\t") + "\n"
+        })
+        .collect();
+    assert_eq!(decoded, dec.stdout);
+    golden("hex_raw_58", &["--hex", "--raw", "58", "3511471"]);
+    golden_stdin("batch_hex", &["--batch", "--hex", "-l", "2"], "22\t7\n2023\t2024\n");
+}
+
+#[test]
 fn unbisected_output_matches_raw_tuples() {
     // with the limit above every tuple length, the terms are exactly (u+v(k-1))(u+vk)
     let raw = egypt(&["--raw", "58", "3511471"]);
