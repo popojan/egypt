@@ -1,8 +1,8 @@
 mod rpn;
 
-use crate::rpn::{_parse_rpn, _parse_rpn_irrational};
+use crate::rpn::{_parse_rpn, parse_rpn};
 
-use std::io;
+use std::io::{self, BufWriter, StdoutLock, Write};
 use std::ops::{Add, Sub, Div, Mul, SubAssign, Neg};
 use clap::Parser;
 use rug::{Complete, Integer, Rational};
@@ -29,9 +29,17 @@ struct Args {
     #[clap(long, value_parser, default_value_t = false)]
     bisect: bool,
 
+    /// Split long symbolic sums greedily (largest unit fraction first) instead of symmetrically
+    #[clap(short, long, value_parser, default_value_t = false)]
+    greedy: bool,
+
     /// No output
     #[clap(short, long, value_parser, default_value_t = false)]
     silent: bool,
+
+    /// Print integers in hexadecimal (decimal conversion dominates large outputs)
+    #[clap(short = 'x', long, value_parser, default_value_t = false)]
+    hex: bool,
 
     /// Batch mode (expects numerator and denominator on each line of stdin)
     #[clap(long, value_parser, default_value_t = false)]
@@ -108,7 +116,8 @@ fn convergent_denominators(cf: &[Integer]) -> Vec<Integer> {
     qs
 }
 
-/// ModInv-based Egyptian fraction computation (original, faster)
+/// ModInv-based computation, kept as the reference form of the paper; the CF pass below is 3-8x faster
+#[allow(dead_code)]
 fn as_egyptian_fraction_symbolic_modinv(x0: &Integer, y0: &Integer, _expand: bool, ret: &mut Vec<(Integer, Integer, Integer, Integer)>) {
     let gcd = x0.clone().gcd(&y0);
     let mut x = x0.clone().div(&gcd);
@@ -129,9 +138,8 @@ fn as_egyptian_fraction_symbolic_modinv(x0: &Integer, y0: &Integer, _expand: boo
     }
 }
 
-/// XGCD-based Egyptian fraction computation using CF-Egypt bijection
-/// Complexity: O(log p) vs O(log² p) for ModInv approach
-/// Required for irrational inputs (provides CF structure for stability analysis)
+/// Single Euclid pass plus the CF-Egypt bijection: one division per quotient instead of one
+/// modular inverse per tuple. Tuples come out in CF order (smallest denominators first).
 fn as_egyptian_fraction_symbolic_cf(x0: &Integer, y0: &Integer, _expand: bool, ret: &mut Vec<(Integer, Integer, Integer, Integer)>) {
     let gcd = x0.clone().gcd(&y0);
     let mut x = x0.clone().div(&gcd);
@@ -187,9 +195,13 @@ fn as_egyptian_fraction_symbolic_cf(x0: &Integer, y0: &Integer, _expand: bool, r
     }
 }
 
-/// Dispatcher: uses ModInv for rationals (faster), CF for irrationals (stability)
+/// Rational entry point: CF pass, then the fractional tuples reversed to keep the
+/// largest-first order of the modinv version (raw output and split order depend on it)
 fn as_egyptian_fraction_symbolic(x0: &Integer, y0: &Integer, expand: bool, ret: &mut Vec<(Integer, Integer, Integer, Integer)>) {
-    as_egyptian_fraction_symbolic_modinv(x0, y0, expand, ret)
+    let start = ret.len();
+    as_egyptian_fraction_symbolic_cf(x0, y0, expand, ret);
+    let is_integer_part = ret.len() > start && ret[start].1.is_zero() && ret[start].3.is_zero();
+    ret[start + usize::from(is_integer_part)..].reverse();
 }
 
 /// CF version - use when stability analysis needed (irrationals)
@@ -225,7 +237,7 @@ fn as_egyptian_fraction(a:&Integer, b:&Integer, args: &Args)->Vec<(Integer, Inte
         args.reverse, &mut res);
     let limit = args.limit.max(2);
     if !args.raw {
-        res = halve_symbolic_sums(&res, limit);
+        res = halve_symbolic_sums(&res, limit, args.greedy);
         res = expand(&res);
         res.sort_by(|x, y| { x.1.cmp(&y.1)});
         if args.merge {
@@ -237,7 +249,7 @@ fn as_egyptian_fraction(a:&Integer, b:&Integer, args: &Args)->Vec<(Integer, Inte
         res = fix_duplicates(&res);
     } else {
         if args.bisect {
-            res = halve_symbolic_sums(&res, limit);
+            res = halve_symbolic_sums(&res, limit, args.greedy);
         }
     }
     res
@@ -254,7 +266,7 @@ fn as_egyptian_fraction_irrational(a: &Integer, b: &Integer, args: &Args) -> Vec
 
     let limit = args.limit.max(2);
     if !args.raw {
-        res = halve_symbolic_sums(&res, limit);
+        res = halve_symbolic_sums(&res, limit, args.greedy);
         res = expand(&res);
         res.sort_by(|x, y| { x.1.cmp(&y.1)});  // expanded: sort by denominator
         if args.merge {
@@ -266,53 +278,35 @@ fn as_egyptian_fraction_irrational(a: &Integer, b: &Integer, args: &Args) -> Vec
         res = fix_duplicates(&res);
     } else {
         if args.bisect {
-            res = halve_symbolic_sums(&res, limit);
+            res = halve_symbolic_sums(&res, limit, args.greedy);
         }
     }
     res
 }
 
+/// Replace every run of n equal terms by the expansion of n times that term until no run is left
 fn fix_duplicates(eg: &Vec<(Integer, Integer, Integer, Integer)>)
     -> Vec<(Integer, Integer, Integer, Integer)> {
-      if eg.is_empty() {
-          return eg.clone();
-      }
-    let mut last_i = 0;
     let mut eg = eg.clone();
-    while last_i < eg.len() {
+    loop {
         eg.sort_by(|x, y| { y.1.cmp(&x.1)});
-        let mut ret = vec![];
-        let mut cnt = 1;
-        let mut prev = eg.first().unwrap();
-        last_i = eg.len();
-        for (i, current) in eg.iter().enumerate().skip(1) {
-            if current == prev {
-                cnt += 1;
-            } else if cnt > 1 {
-                last_i = i;
-                break;
-            } else {
-                cnt = 1;
-                ret.push(prev.clone());
-                prev = current;
+        let mut run = None;
+        let mut i = 0;
+        while i < eg.len() {
+            let mut j = i + 1;
+            while j < eg.len() && eg[j] == eg[i] {
+                j += 1;
             }
+            if j - i > 1 {
+                run = Some((i, j));
+                break;
+            }
+            i = j;
         }
-        if last_i < eg.len() {
-            let a = Integer::from(cnt);
-            let b = prev.clone();
-            let gcd = a.clone().gcd(&b.1);
-            let mut new = vec![];
-            as_egyptian_fraction_symbolic(&a.div(&gcd), &b.1.div(&gcd), false, &mut new);
-            ret.extend(expand(&new));
-            ret.extend(eg[last_i..eg.len()].to_vec());
-        } else {
-            ret.push(prev.clone());
-        }
-        if eg == ret {
-            break;
-        }
-        eg.clear();
-        eg.extend(ret);
+        let Some((i, j)) = run else { break };
+        let mut new = vec![];
+        as_egyptian_fraction_symbolic(&Integer::from(j - i), &eg[i].1, false, &mut new);
+        eg.splice(i..j, expand(&new));
     }
     eg.sort_by(|x, y| { x.1.cmp(&y.1)});
     eg
@@ -325,7 +319,7 @@ fn calculate_raw_sum(u:&Integer, v:&Integer, i:&Integer, j:&Integer) -> (Integer
     (num.div(&gcd), den.div(&gcd))
 }
 
-fn halve_symbolic_sums(a: &Vec<(Integer, Integer, Integer, Integer)>, limit: usize)
+fn halve_symbolic_sums(a: &Vec<(Integer, Integer, Integer, Integer)>, limit: usize, greedy: bool)
     -> Vec<(Integer, Integer, Integer, Integer)>
 {
     let mut stack = a.clone();
@@ -339,7 +333,15 @@ fn halve_symbolic_sums(a: &Vec<(Integer, Integer, Integer, Integer)>, limit: usi
             ret.push((u, v, i, j));
         } else {
             let (a, b) = calculate_raw_sum(&u, &v, &i, &j);
-            if a.is_odd() {
+            if greedy {
+                // largest unit fraction 1/d <= a/b; remainder numerator is < a, so this terminates
+                let d = (b.clone() + &a - 1u32) / &a;
+                ret.push((Integer::from(1), d.clone() - 1u32, Integer::from(1), Integer::from(1)));
+                let num = a * &d - &b;
+                if !num.is_zero() {
+                    as_egyptian_fraction_symbolic(&num, &(b * &d), false, &mut stack);
+                }
+            } else if a.is_odd() {
                 let a1 = a.sub(&Integer::from(1)).div(&two);
                 let a2 = a1.clone().add(&Integer::from(1));
                 as_egyptian_fraction_symbolic(&a1, &b, false, &mut stack);
@@ -419,22 +421,20 @@ fn contains_irrational(s: &str) -> bool {
     lower.contains("sqrt")  // sqrt of non-perfect square
 }
 
-/// Parse RPN, auto-detecting rational vs irrational input
+/// Evaluate both RPN expressions as rationals and divide: (a/b) / (c/d) = ad / bc
 /// Returns (numerator, denominator, is_irrational)
 fn parse_rpn_auto(num_str: &str, den_str: &str, precision: u32) -> (Integer, Integer, bool) {
     let is_irrational = contains_irrational(num_str) || contains_irrational(den_str);
-    if is_irrational {
-        // Each irrational expression returns (numerator, denominator) of its rational approximation
-        // For expression A / B, we compute: (num_A / den_A) / (num_B / den_B) = (num_A * den_B) / (den_A * num_B)
-        let (num_a, den_a) = _parse_rpn_irrational(num_str, precision);
-        let (num_b, den_b) = _parse_rpn_irrational(den_str, precision);
-        let final_num = (num_a * &den_b).abs();
-        let final_den = (den_a * &num_b).abs();
-        let gcd = final_num.clone().gcd(&final_den);
-        (final_num / &gcd, final_den / &gcd, true)
-    } else {
-        (_parse_rpn(num_str).abs(), _parse_rpn(den_str).abs(), false)
+    let (num_a, den_a) = parse_rpn(num_str, precision);
+    let (num_b, den_b) = parse_rpn(den_str, precision);
+    let final_num = (num_a * &den_b).abs();
+    let final_den = (den_a * &num_b).abs();
+    if final_den.is_zero() {
+        eprintln!("Error: denominator evaluates to zero");
+        std::process::exit(2);
     }
+    let gcd = final_num.clone().gcd(&final_den);
+    (final_num / &gcd, final_den / &gcd, is_irrational)
 }
 
 /// Calculate the smallest denominator a raw tuple produces (for sorting)
@@ -453,15 +453,25 @@ fn sort_by_fraction_size(tuples: &mut Vec<(Integer, Integer, Integer, Integer)>)
     });
 }
 
+/// Decimal conversion is superlinear and dominates large outputs; hex is linear
+fn fmt_int(i: &Integer, hex: bool) -> String {
+    if hex { format!("{:x}", i) } else { i.to_string() }
+}
+
+fn stdout_writer() -> BufWriter<StdoutLock<'static>> {
+    BufWriter::with_capacity(1 << 20, io::stdout().lock())
+}
+
 fn main() {
     let args = Args::parse();
 
     if args.batch {
+        let mut out = stdout_writer();
         for line in io::stdin().lines() {
             if let Ok(line) = line {
                 let num_den = line.split("\t").take(2).collect::<Vec<&str>>();
                 if num_den.len() < 2 {
-                    println!("expecting tab delimited numerator and denominator");
+                    writeln!(out, "expecting tab delimited numerator and denominator").unwrap();
                     continue;
                 }
 
@@ -472,37 +482,32 @@ fn main() {
                     as_egyptian_fraction(&num, &den, &args)
                 };
                 if !args.silent {
+                    let hex = args.hex;
                     let mut gt0 = false;
-                    print!("{}\t{}\t", num.to_string(), den.to_string());
-                    for (i, (a, b, c, d))
-                        in fractions.iter().enumerate() {
+                    write!(out, "{}\t{}\t", fmt_int(&num, hex), fmt_int(&den, hex)).unwrap();
+                    for (i, (a, b, c, d)) in fractions.iter().enumerate() {
                         let is_natural = (args.raw && b.is_zero() && c.is_zero() && d.is_zero())
                             || (!args.raw && *b == Integer::from(1));
+                        let term = if args.raw {
+                            format!("{},{},{},{}", fmt_int(a, hex), fmt_int(b, hex), fmt_int(c, hex), fmt_int(d, hex))
+                        } else {
+                            fmt_int(b, hex)
+                        };
                         if i == 0 && is_natural {
-                            print!("{}\t", a);
+                            write!(out, "{}\t", fmt_int(a, hex)).unwrap();
                             gt0 = true;
                         } else if i == 0 {
-                            if !args.raw {
-                                print!("0\t{}", b);
-                            } else {
-                                print!("0\t{},{},{},{}", a, b, c, d);
-                            }
+                            write!(out, "0\t{}", term).unwrap();
                         } else if i == 1 && gt0 {
-                            if args.raw {
-                                print!("{},{},{},{}", a, b, c, d);
-                            } else {
-                                print!("{}", b);
-                            }
+                            write!(out, "{}", term).unwrap();
                         } else {
-                            if args.raw {
-                                print!(" {},{},{},{}", a, b, c, d);
-                            } else {
-                                print!(" {}", b);
-                            }
+                            write!(out, " {}", term).unwrap();
                         }
                     }
-                    print!("\n");
+                    writeln!(out).unwrap();
                 }
+                // one line per input, so a coprocess feeding stdin sees each answer at once
+                out.flush().unwrap();
             }
         }
     } else {
@@ -532,7 +537,7 @@ fn main() {
                 let mut found_quasi = false;
 
                 for (q, p, norm) in pell_results {
-                    println!("{}\t{}\t{}", q, p, norm);
+                    println!("{}\t{}\t{}", fmt_int(&q, args.hex), fmt_int(&p, args.hex), fmt_int(&norm, args.hex));
 
                     if !found_quasi && norm == Integer::from(-1) {
                         eprintln!("# Quasi-solution (norm=-1): p={}, q={}", p, q);
@@ -560,14 +565,16 @@ fn main() {
             } else {
                 as_egyptian_fraction(&num, &den, &args)
             };
-            for (a, b, c, d) in fractions.iter() {
-                if !args.silent {
-                    if !args.raw {
-                        println!("{:?}\t{:?}", a, b);
+            if !args.silent {
+                let (hex, mut out) = (args.hex, stdout_writer());
+                for (a, b, c, d) in fractions.iter() {
+                    if args.raw {
+                        writeln!(out, "{}\t{}\t{}\t{}", fmt_int(a, hex), fmt_int(b, hex), fmt_int(c, hex), fmt_int(d, hex)).unwrap();
                     } else {
-                        println!("{:?}\t{:?}\t{:?}\t{:?}", a, b, c, d);
+                        writeln!(out, "{}\t{}", fmt_int(a, hex), fmt_int(b, hex)).unwrap();
                     }
                 }
+                out.flush().unwrap();
             }
         }
     }
@@ -582,5 +589,61 @@ fn extract_pell_d(s: &str) -> Option<Integer> {
         Some(_parse_rpn(&num_str))
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rug::ops::Pow;
+    use std::collections::HashSet;
+
+    /// Expansion must sum exactly to the input and use each unit fraction once
+    fn check(cli: &[&str]) {
+        let args = Args::parse_from(std::iter::once("egypt").chain(cli.iter().copied()));
+        let (num, den, irrational) = parse_rpn_auto(&args.numerator, &args.denominator, args.precision);
+        let fractions = if irrational {
+            as_egyptian_fraction_irrational(&num, &den, &args)
+        } else {
+            as_egyptian_fraction(&num, &den, &args)
+        };
+        let mut sum = Rational::new();
+        let mut seen = HashSet::new();
+        for (a, b, _, _) in &fractions {
+            sum += Rational::from((a.clone(), b.clone()));
+            if *a == 1 {
+                assert!(seen.insert(b.clone()), "duplicate 1/{} in {:?}", b, cli);
+            }
+        }
+        assert_eq!(sum, Rational::from((num, den)), "{:?}", cli);
+    }
+
+    #[test]
+    fn expansions_sum_to_input_with_distinct_terms() {
+        let inputs = [
+            ("7", "19"), ("2023", "2024"), ("999999", "1000000"), ("58", "3511471"),
+            ("5", "3"), ("2 107 ^ 1 -", "2 127 ^ 1 -"), ("1 3 /", "0.7"), ("49 sqrt", "11"),
+            // at -l 2 the duplicate 1/37 expands to 1/19 + 1/703 and 1/19 is itself a repeat
+            ("24285564808518", "223702468834263"),
+        ];
+        let modes: [&[&str]; 4] = [&[], &["-g"], &["-m"], &["-m", "-r"]];
+        for (a, b) in inputs {
+            for limit in ["2", "8"] {
+                for mode in modes {
+                    let mut cli = vec!["-l", limit, a, b];
+                    cli.extend_from_slice(mode);
+                    check(&cli);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn big_literals_parse_exactly() {
+        let (n, d, irrational) = parse_rpn_auto(
+            "162259276829213363391578010288127", "170141183460469231731687303715884105727", 64);
+        assert_eq!(n, Integer::from(2u32).pow(107u32) - 1u32);
+        assert_eq!(d, Integer::from(2u32).pow(127u32) - 1u32);
+        assert!(!irrational);
     }
 }

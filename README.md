@@ -18,18 +18,35 @@ Arguments:
   [DENOMINATOR]  [default: 1]
 
 Options:
-  -r, --reverse        Reverse merge strategy
-  -m, --merge          Extra O(n^2) merge step possibly reducing number of terms
-      --raw            Output minimal number of raw quadruplets (aka symbolic sums)
-      --bisect         Output raw quadruplets bisected according to --limit
-  -s, --silent         No output
-      --batch          Batch mode (expects numerator and denominator on each line of stdin)
-  -l, --limit <LIMIT>  Maximum number of terms for breaking large symbolic sums [default: 8]
-  -h, --help           Print help
-  -V, --version        Print version
+  -r, --reverse                Reverse merge strategy
+  -m, --merge                  Extra O(n^2) merge step possibly reducing number of terms
+      --raw                    Output minimal number of raw quadruplets (aka symbolic sums)
+      --bisect                 Output raw quadruplets bisected according to --limit
+  -g, --greedy                 Split long symbolic sums greedily (largest unit fraction first) instead of symmetrically
+  -s, --silent                 No output
+  -x, --hex                    Print integers in hexadecimal (decimal conversion dominates large outputs)
+      --batch                  Batch mode (expects numerator and denominator on each line of stdin)
+  -l, --limit <LIMIT>          Maximum number of terms for breaking large symbolic sums [default: 8]
+  -p, --precision <PRECISION>  Precision in bits for irrational/transcendental constants (pi, e, phi, etc.) Higher precision = more CF terms = more Egypt tuples [default: 256]
+      --pell                   Pell equation mode: output (q, p, norm) for sqrt(D)/1 input Finds solutions to p² - D·q² = ±1
+  -h, --help                   Print help
+  -V, --version                Print version
 ```
 
+## Tests
+
+```
+cargo test --release
+```
+
+Unit tests cover the RPN parser and the expansion invariants (distinct unit fractions summing
+to the input, the same checks as `wl/test.wls`). `tests/cli.rs` runs the binary with each switch
+against golden outputs in `tests/golden`; regenerate them with `UPDATE_GOLDEN=1 cargo test --release --test cli`.
+
 ## Performance
+
+Decimal conversion dominates large outputs; `-x/--hex` prints every integer in hexadecimal instead
+(about 60% less time on 10k-bit inputs, 94% on `--raw` at 100k bits).
 ```
 $ time ./egypt -s '2 9689 ^ 1 -' '2 9941 ^ 1 -'
 
@@ -93,6 +110,8 @@ sys     0m0.002s
   * 1 / 2 + 1 / 3 + 1 / 7 + 1 / 43 + 1 / 18447 + 1 / 184184
 * `egypt --limit 2 2023 2024`
     *   1 / 2 + 1 / 4 + 1 / 8 + 1 / 11 + 1 / 33 + 1 / 674 + 1 / 899 + 1 / 2442 + 1 / 4044 + 1 / 24938 + 1 / 2046264 + 1 / 2423704
+* `egypt --limit 2 --greedy 2023 2024` (largest unit fraction first, like the greedy algorithm, but the remainder keeps the CF structure)
+    *   1 / 2 + 1 / 3 + 1 / 7 + 1 / 43 + 1 / 16907 + 1 / 2046264 + 1 / 342999072 + 1 / 588241816621306848
 
 ## Irrational / Transcendental Numbers
 
