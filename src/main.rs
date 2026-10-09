@@ -5,7 +5,7 @@ use crate::rpn::{_parse_rpn, parse_rpn};
 use std::io::{self, BufWriter, StdoutLock, Write};
 use std::ops::{Add, Sub, Div, Mul, SubAssign, Neg};
 use clap::Parser;
-use rug::{Complete, Integer, Rational};
+use rug::{Assign, Complete, Integer, Rational};
 
 /// Egyptian Fractions
 
@@ -64,6 +64,10 @@ struct Args {
     /// Finds solutions to p² - D·q² = ±1
     #[clap(long, value_parser, default_value_t = false)]
     pell: bool,
+
+    /// Divisor-residue descent: fewer terms, much larger denominators (experimental, doc/divisor-descent.md)
+    #[clap(long, value_parser, default_value_t = false)]
+    descent: bool,
 }
 
 fn merge(eg: &Vec<(Integer, Integer, Integer, Integer)>) -> Vec<(Integer, Integer, Integer, Integer)> {
@@ -230,6 +234,9 @@ fn expand(eg: &Vec<(Integer, Integer, Integer, Integer)>) -> Vec<(Integer, Integ
 }
 
 fn as_egyptian_fraction(a:&Integer, b:&Integer, args: &Args)->Vec<(Integer, Integer,Integer,Integer)> {
+    if args.descent {
+        return as_egyptian_fraction_descent(a, b, args);
+    }
     let mut res = vec![];
     as_egyptian_fraction_symbolic(
         &a,
@@ -255,9 +262,115 @@ fn as_egyptian_fraction(a:&Integer, b:&Integer, args: &Args)->Vec<(Integer, Inte
     res
 }
 
+/// Divisors t = d·e of M = p_k#·c with d | p_k# and e in {1, c}, ascending
+fn descent_divisors(k: usize, c: &Integer) -> (Integer, Vec<Integer>) {
+    let mut gens: Vec<Integer> = (2u32..).filter(|n| (2..*n).take_while(|d| d * d <= *n).all(|d| n % d != 0))
+        .take(k).map(Integer::from).collect();
+    if *c > 1 {
+        gens.push(c.clone());
+    }
+    let mut divisors = vec![Integer::from(1)];
+    for g in &gens {
+        let more: Vec<Integer> = divisors.iter().map(|d| Integer::from(d * g)).collect();
+        divisors.extend(more);
+    }
+    divisors.sort();
+    (divisors.last().unwrap().clone(), divisors)
+}
+
+/// Remainder denominators double in bit length per term; past this the input is too large for the descent
+const DESCENT_MAX_BITS: u64 = 1 << 24;
+
+/// Divisor-residue descent after "Short Egyptian fractions" (OpenAI, 2026,
+/// https://github.com/openai/math/blob/main/preprints/Short-Egyptian-fractions-September-25-2026/Short-Egyptian-fractions-September-25-2026.pdf):
+/// for t | M, u/(MQ) = 1/((M/t)z) + h/(zMQ), z = ceil(Qt/u), h = (-Qt) mod u; each step takes the t
+/// with the smallest h (ties: smaller t, i.e. smaller remainder denominator) whose term is unused.
+/// M = lcm(p_K#, b) gives Q = 1 without factoring b; K = bits(a)/3 within [4, 16] (doc/divisor-descent.md)
+fn as_egyptian_fraction_descent(a: &Integer, b: &Integer, args: &Args) -> Vec<(Integer, Integer, Integer, Integer)> {
+    let g = a.clone().gcd(b);
+    let (mut a, b) = (a.clone() / &g, b.clone() / &g);
+    let mut res = vec![];
+    if a >= b {
+        res.push((a.clone() / &b, Integer::from(1), Integer::from(0), Integer::from(0)));
+        a %= &b;
+    }
+    let k = (a.significant_bits() as usize).div_ceil(3).clamp(4, 16);
+    let (pk, _) = descent_divisors(k, &Integer::from(1));
+    let c = b.clone() / b.clone().gcd(&pk);
+    let (m, divisors) = descent_divisors(k, &c);
+    let (mut u, mut q) = (a * (m.clone() / &b), Integer::from(1));
+    let mut seen = std::collections::HashSet::new();
+    let mut tmp = Integer::new();
+    while !u.is_zero() {
+        let qm = q.clone() % &u;
+        let h_of = |t: &Integer, r: &mut Integer| {
+            r.assign(&qm * t);
+            *r %= &u;
+            if !r.is_zero() {
+                *r = u.clone() - &*r;
+            }
+        };
+        // allocation-free scan for the smallest h: r = Qt mod u is 0 there, or else the largest r
+        let (mut best_r, mut order) = (Integer::from(-1), vec![]);
+        for (i, t) in divisors.iter().enumerate() {
+            tmp.assign(&qm * t);
+            tmp %= &u;
+            let better = if best_r.is_zero() { false } else { tmp.is_zero() || tmp > best_r };
+            if better {
+                best_r.assign(&tmp);
+                order.clear();
+            }
+            if better || tmp == best_r {
+                order.push(i);
+            }
+        }
+        let try_order = |order: &[usize]| order.iter().find_map(|&i| {
+            let t = &divisors[i];
+            let mut h = Integer::new();
+            h_of(t, &mut h);
+            let z = (q.clone() * t + &h) / &u;
+            let d = m.clone() / t * &z;
+            (!seen.contains(&d)).then(|| (d, z, h))
+        });
+        // collisions are rare: sort all residues only if every smallest-h term is already used
+        let step = try_order(&order).or_else(|| {
+            let hs: Vec<Integer> = divisors.iter().map(|t| { let mut h = Integer::new(); h_of(t, &mut h); h }).collect();
+            let mut rest: Vec<usize> = (0..divisors.len()).collect();
+            rest.sort_by(|&i, &j| hs[i].cmp(&hs[j]).then(i.cmp(&j)));
+            try_order(&rest)
+        });
+        let Some((d, z, h)) = step else {
+            eprintln!("Error: --descent found no unused divisor term");
+            std::process::exit(2);
+        };
+        // bit-length sum bounds the product within 2 bits; each factor stays below 2^32 bits
+        let bits = [&z, &m, &q].iter().map(|x| u64::from(x.significant_bits())).sum::<u64>();
+        if !h.is_zero() && bits > DESCENT_MAX_BITS {
+            eprintln!("Error: --descent denominators exceed 2^24 bits, input too large");
+            std::process::exit(2);
+        }
+        res.push((Integer::from(1), d.clone(), Integer::from(0), Integer::from(0)));
+        seen.insert(d);
+        (u, q) = (h, q * z);
+    }
+    res.sort_by(|x, y| x.1.cmp(&y.1));
+    if args.raw {
+        // a unit fraction 1/d is the one-term tuple (1, d-1, 1, 1), an integer n is (n, 0, 0, 0)
+        res = res.into_iter().map(|(n, d, _, _)| if d == 1 {
+            (n, Integer::new(), Integer::new(), Integer::new())
+        } else {
+            (n, d - 1u32, Integer::from(1), Integer::from(1))
+        }).collect();
+    }
+    res
+}
+
 /// Egyptian fraction for irrationals: uses CF, sorts by fraction size
 /// No truncation - user controls precision, we output full CF expansion
 fn as_egyptian_fraction_irrational(a: &Integer, b: &Integer, args: &Args) -> Vec<(Integer, Integer, Integer, Integer)> {
+    if args.descent {
+        return as_egyptian_fraction_descent(a, b, args);
+    }
     let mut res = vec![];
     as_egyptian_fraction_symbolic_for_irrational(&a, &b, args.reverse, &mut res);
 
@@ -626,7 +739,7 @@ mod tests {
             // at -l 2 the duplicate 1/37 expands to 1/19 + 1/703 and 1/19 is itself a repeat
             ("24285564808518", "223702468834263"),
         ];
-        let modes: [&[&str]; 4] = [&[], &["-g"], &["-m"], &["-m", "-r"]];
+        let modes: [&[&str]; 5] = [&[], &["-g"], &["-m"], &["-m", "-r"], &["--descent"]];
         for (a, b) in inputs {
             for limit in ["2", "8"] {
                 for mode in modes {

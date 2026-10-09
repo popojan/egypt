@@ -116,6 +116,18 @@ fn greedy_switch() {
 }
 
 #[test]
+fn descent_switch() {
+    golden("descent_999999", &["--descent", "999999", "1000000"]);
+    let m = ratio("162259276829213363391578010288127", "170141183460469231731687303715884105727");
+    assert_expansion(&["--descent", "2 107 ^ 1 -", "2 127 ^ 1 -"], &m);
+    // b with repeated small primes, and a primorial denominator (M = lcm(p_K#, b) = b)
+    assert_expansion(&["--descent", "7", "104544"], &ratio("7", "104544"));
+    assert_expansion(&["--descent", "5281", "30030"], &ratio("5281", "30030"));
+    let raw = egypt(&["--descent", "--raw", "22", "7"]);
+    assert_eq!(raw.stdout, "3\t0\t0\t0\n1\t6\t1\t1\n");
+}
+
+#[test]
 fn hex_switch() {
     let args = ["-l", "8", "2 107 ^ 1 -", "2 127 ^ 1 -"];
     let dec = egypt(&args);
@@ -223,9 +235,10 @@ fn switch_matrix_keeps_invariants() {
         ("49 sqrt", "11", ratio("7", "11")),
         ("1 3 /", "0.7", ratio("10", "21")),
     ];
-    let modes: [&[&str]; 8] = [
+    let modes: [&[&str]; 10] = [
         &[], &["-l", "2"], &["-g"], &["-l", "2", "-g"],
         &["-m"], &["-r", "-m"], &["-m", "-l", "2"], &["-m", "-g", "-l", "3"],
+        &["--descent"], &["--descent", "-r", "-m"],
     ];
     for (a, b, value) in &inputs {
         for mode in modes {
@@ -246,11 +259,13 @@ fn random_rationals_keep_invariants() {
         state ^= state << 17;
         state
     };
-    for _ in 0..40 {
+    for i in 0..40 {
         let a = ((next() >> 16) + 1).to_string();
         let b = ((next() >> 16) + 1).to_string();
         let value = ratio(&a, &b);
-        for mode in [&[][..], &["-l", "2"][..], &["-g"][..], &["-m"][..]] {
+        // the descent scans 2^16 divisors per term at this size, so a quarter of the inputs suffices
+        let descent: &[&str] = if i % 4 == 0 { &["--descent"] } else { &[] };
+        for mode in [&[][..], &["-l", "2"][..], &["-g"][..], &["-m"][..], descent] {
             let mut args = mode.to_vec();
             args.extend([a.as_str(), b.as_str()]);
             assert_expansion(&args, &value);
