@@ -29,6 +29,7 @@ Options:
   -l, --limit <LIMIT>          Maximum number of terms for breaking large symbolic sums [default: 8]
   -p, --precision <PRECISION>  Precision in bits for irrational/transcendental constants (pi, e, phi, etc.) Higher precision = more CF terms = more Egypt tuples [default: 256]
       --pell                   Pell equation mode: output (q, p, norm) for sqrt(D)/1 input Finds solutions to p² - D·q² = ±1
+      --descent                Divisor-residue descent: fewer terms, much larger denominators (experimental, doc/divisor-descent.md)
   -h, --help                   Print help
   -V, --version                Print version
 ```
@@ -112,6 +113,25 @@ sys     0m0.002s
     *   1 / 2 + 1 / 4 + 1 / 8 + 1 / 11 + 1 / 33 + 1 / 674 + 1 / 899 + 1 / 2442 + 1 / 4044 + 1 / 24938 + 1 / 2046264 + 1 / 2423704
 * `egypt --limit 2 --greedy 2023 2024` (largest unit fraction first, like the greedy algorithm, but the remainder keeps the CF structure)
     *   1 / 2 + 1 / 3 + 1 / 7 + 1 / 43 + 1 / 16907 + 1 / 2046264 + 1 / 342999072 + 1 / 588241816621306848
+
+### Divisor-residue descent (experimental)
+
+`--descent` follows the descent step of the OpenAI preprint
+[*Short Egyptian fractions*](https://github.com/openai/math/blob/main/preprints/Short-Egyptian-fractions-September-25-2026/Short-Egyptian-fractions-September-25-2026.pdf)
+(2026), which proves O(log log b) terms. For a divisor t of M = lcm(p_K#, b), it uses
+u/(MQ) = 1/((M/t)z) + h/(zMQ) with z = ⌈Qt/u⌉, and at each step picks the t with the smallest
+h = (−Qt) mod u. It needs far fewer terms on large inputs, but its denominators roughly double in
+bit length with every term. Median over random a/b:
+
+| b | `--merge` terms / max bits | `--descent` terms / max bits |
+|---|---|---|
+| 10⁶ | 8.5 / 40 | 6 / 59 |
+| 10¹² | 21 / 102 | 9 / 234 |
+| 10³⁰ | 56.5 / 319 | 13 / 2304 |
+
+It gives no gain on small inputs (2023/2024: 6 terms) and exits with status 2 once a denominator
+would pass 2²⁴ bits (between 10¹⁰⁰ and 10¹⁵⁰). See `doc/divisor-descent.md` for all strategies and
+the design, and `scripts/bench_descent.py` to reproduce the numbers.
 
 ## Irrational / Transcendental Numbers
 
