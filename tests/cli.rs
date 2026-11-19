@@ -164,9 +164,14 @@ fn unbisected_output_matches_raw_tuples() {
         }
     }
     expected.sort();
-    let full = egypt(&["-l", "100000", "58", "3511471"]);
+    let full = egypt(&["-l", "inf", "58", "3511471"]);
     let got: Vec<Integer> = fractions(&full.stdout).into_iter().map(|(_, b)| b).collect();
     assert_eq!(got, expected);
+    // a_4 = 14 exceeds the default limit
+    let inf = egypt(&["-l", "inf", "16544", "140893"]);
+    assert_eq!(inf.stdout, egypt(&["-l", "100000", "16544", "140893"]).stdout);
+    assert_eq!(inf.stdout.lines().count(), 24);
+    assert!(egypt(&["-l", "infinity", "1", "2"]).code != 0);
 }
 
 #[test]

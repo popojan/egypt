@@ -51,8 +51,8 @@ struct Args {
     #[clap(value_parser, default_value_t = String::from("1"))]
     denominator: String,
 
-    /// Maximum number of terms for breaking large symbolic sums
-    #[clap(short, long, value_parser, default_value_t = 8)]
+    /// Maximum number of terms for breaking large symbolic sums (`inf`: no bisection)
+    #[clap(short, long, value_parser = parse_limit, default_value_t = 8)]
     limit: usize,
 
     /// Precision in bits for irrational/transcendental constants (pi, e, phi, etc.)
@@ -68,6 +68,13 @@ struct Args {
     /// Divisor-residue descent: fewer terms, much larger denominators (experimental, doc/divisor-descent.md)
     #[clap(long, value_parser, default_value_t = false)]
     descent: bool,
+}
+
+fn parse_limit(s: &str) -> Result<usize, String> {
+    match s {
+        "inf" => Ok(usize::MAX),
+        _ => s.parse().map_err(|e| format!("{e} (expected a number or `inf`)")),
+    }
 }
 
 fn merge(eg: &Vec<(Integer, Integer, Integer, Integer)>) -> Vec<(Integer, Integer, Integer, Integer)> {

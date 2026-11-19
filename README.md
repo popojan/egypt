@@ -26,7 +26,7 @@ Options:
   -s, --silent                 No output
   -x, --hex                    Print integers in hexadecimal (decimal conversion dominates large outputs)
       --batch                  Batch mode (expects numerator and denominator on each line of stdin)
-  -l, --limit <LIMIT>          Maximum number of terms for breaking large symbolic sums [default: 8]
+  -l, --limit <LIMIT>          Maximum number of terms for breaking large symbolic sums (`inf`: no bisection) [default: 8]
   -p, --precision <PRECISION>  Precision in bits for irrational/transcendental constants (pi, e, phi, etc.) Higher precision = more CF terms = more Egypt tuples [default: 256]
       --pell                   Pell equation mode: output (q, p, norm) for sqrt(D)/1 input Finds solutions to p² - D·q² = ±1
       --descent                Divisor-residue descent: fewer terms, much larger denominators (experimental, doc/divisor-descent.md)
@@ -238,6 +238,12 @@ For q = a/b with CF [0; a₁, a₂, ..., aₙ] and convergent denominators {q₀
 | Last tuple, odd CF | q_{n-1} | q_n - q_{n-1} | 1 |
 
 **Key insight:** XGCD quotients ARE CF coefficients, enabling single-pass computation.
+
+**Inverse.** With `-l inf` (no bisection) the expanded denominators form a chain `d_i = s_{i-1} s_i`, `s_0 = 1`,
+of semiconvergent denominators `s = q_{2k-2} + i q_{2k-1}`, `i = 1..a_{2k}`, so the CF is read back by exact
+divisions alone: `s_i = d_i / s_{i-1}`; runs of equal differences `s_i - s_{i-1} = q_{2k-1}` have length `a_{2k}`,
+and `a_{2k-1} = (q_{2k-1} - q_{2k-3}) / q_{2k-2}`. The output has `a_2 + a_4 + ...` terms, e.g.
+`(2x-1)/(2x²-1) = [0; x, 2, x-1]` always gives 3. With `--raw` the tuples carry `q_{2k-2}, q_{2k-1}, a_{2k}` directly.
 
 ---
 
