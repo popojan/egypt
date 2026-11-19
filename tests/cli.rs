@@ -2,6 +2,7 @@
 //! wl/test.wls (unit numerators, no duplicate denominators, exact sum).
 //! Regenerate goldens with `UPDATE_GOLDEN=1 cargo test --release --test cli`.
 
+use rug::ops::Pow;
 use rug::{Integer, Rational};
 use std::collections::HashSet;
 use std::io::Write;
@@ -185,6 +186,44 @@ fn precision_switch_and_irrational_goldens() {
     golden("phi_raw_p64", &["phi", "1", "--raw", "-p", "64"]);
     golden("sqrt7_11_p32", &["-p", "32", "7 sqrt", "11"]);
     golden("sqrt7_11_p32_raw", &["-p", "32", "--raw", "7 sqrt", "11"]);
+}
+
+#[test]
+fn irrational_output_is_settled() {
+    // every tuple agrees with a much more precise run; the last may be a partial run of its tuple
+    let rows = |p: &str, x: &str| -> Vec<Vec<Integer>> {
+        egypt(&["--raw", "-p", p, x, "1"]).stdout.lines()
+            .map(|l| l.split('\t').map(|c| c.parse().unwrap()).collect()).collect()
+    };
+    for x in ["pi", "gamma", "e pi ^", "pi e +", "7 sqrt", "phi inv"] {
+        for p in ["40", "100", "256"] {
+            let (a, t) = (rows(p, x), rows("8192", x));
+            let n = a.len();
+            assert_eq!(a[..n - 1], t[..n - 1], "{} at {} bits", x, p);
+            assert!(a[n - 1][..3] == t[n - 1][..3] && a[n - 1][3] <= t[n - 1][3], "{} at {} bits", x, p);
+        }
+    }
+    // [0; 1, 10^30, ...]: at 128 bits only a lower bound of a_2 is known
+    let x = "1 10 30 ^ pi inv + inv 1 + inv";
+    let partial = &rows("128", x)[0];
+    assert_eq!(partial[..3], [Integer::from(1), Integer::from(1), Integer::from(1)]);
+    assert!(partial[3] < Integer::from(10).pow(30) && partial[3] > Integer::from(10).pow(29));
+}
+
+#[test]
+fn tuples_switch() {
+    let run = egypt(&["--raw", "-t", "100", "pi", "1"]);
+    assert_eq!((run.code, run.stdout.lines().count()), (0, 101), "integer part and 100 tuples");
+    let run = egypt(&["--raw", "-t", "100", "-p", "8192", "pi", "1"]);
+    assert_eq!(run.stdout.lines().count(), 101);
+    // a rational value never settles: report it and fail
+    for args in [&["2 sqrt 2 sqrt *", "1"][..], &["-t", "5", "pi pi -", "1"][..]] {
+        let run = egypt(args);
+        assert_eq!(run.code, 1, "{:?}", args);
+        assert!(run.stderr.contains("settled"), "{}", run.stderr);
+    }
+    let run = egypt(&["-t", "200", "-p", "256", "pi", "1"]);
+    assert_eq!(run.code, 1, "-p caps the doubling");
 }
 
 #[test]
