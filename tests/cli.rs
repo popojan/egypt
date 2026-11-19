@@ -2,6 +2,7 @@
 //! wl/test.wls (unit numerators, no duplicate denominators, exact sum).
 //! Regenerate goldens with `UPDATE_GOLDEN=1 cargo test --release --test cli`.
 
+use rug::ops::Pow;
 use rug::{Integer, Rational};
 use std::collections::HashSet;
 use std::io::Write;
@@ -188,6 +189,44 @@ fn precision_switch_and_irrational_goldens() {
 }
 
 #[test]
+fn irrational_output_is_settled() {
+    // every tuple agrees with a much more precise run; the last may be a partial run of its tuple
+    let rows = |p: &str, x: &str| -> Vec<Vec<Integer>> {
+        egypt(&["--raw", "-p", p, x, "1"]).stdout.lines()
+            .map(|l| l.split('\t').map(|c| c.parse().unwrap()).collect()).collect()
+    };
+    for x in ["pi", "gamma", "e pi ^", "pi e +", "7 sqrt", "phi inv"] {
+        for p in ["40", "100", "256"] {
+            let (a, t) = (rows(p, x), rows("8192", x));
+            let n = a.len();
+            assert_eq!(a[..n - 1], t[..n - 1], "{} at {} bits", x, p);
+            assert!(a[n - 1][..3] == t[n - 1][..3] && a[n - 1][3] <= t[n - 1][3], "{} at {} bits", x, p);
+        }
+    }
+    // [0; 1, 10^30, ...]: at 128 bits only a lower bound of a_2 is known
+    let x = "1 10 30 ^ pi inv + inv 1 + inv";
+    let partial = &rows("128", x)[0];
+    assert_eq!(partial[..3], [Integer::from(1), Integer::from(1), Integer::from(1)]);
+    assert!(partial[3] < Integer::from(10).pow(30) && partial[3] > Integer::from(10).pow(29));
+}
+
+#[test]
+fn tuples_switch() {
+    let run = egypt(&["--raw", "-t", "100", "pi", "1"]);
+    assert_eq!((run.code, run.stdout.lines().count()), (0, 101), "integer part and 100 tuples");
+    let run = egypt(&["--raw", "-t", "100", "-p", "8192", "pi", "1"]);
+    assert_eq!(run.stdout.lines().count(), 101);
+    // a rational value never settles: report it and fail
+    for args in [&["2 sqrt 2 sqrt *", "1"][..], &["-t", "5", "pi pi -", "1"][..]] {
+        let run = egypt(args);
+        assert_eq!(run.code, 1, "{:?}", args);
+        assert!(run.stderr.contains("settled"), "{}", run.stderr);
+    }
+    let run = egypt(&["-t", "200", "-p", "256", "pi", "1"]);
+    assert_eq!(run.code, 1, "-p caps the doubling");
+}
+
+#[test]
 fn pell_switch() {
     let run = golden("pell_13", &["13 sqrt", "1", "--pell", "-p", "64"]);
     assert!(run.stderr.contains("Fundamental solution (norm=1): p=649, q=180"), "{}", run.stderr);
@@ -201,6 +240,24 @@ fn batch_switch() {
     golden_stdin("batch_limit8", &["--batch", "-l", "8"], input);
     golden_stdin("batch_raw", &["--batch", "--raw"], input);
     golden_stdin("batch_greedy", &["--batch", "-l", "2", "-g"], input);
+}
+
+#[test]
+fn closed_stdout_exits_quietly() {
+    use std::io::{BufRead, BufReader};
+    // ~1M lines, far beyond the pipe buffer, so egypt is still writing when the reader leaves
+    let mut child = Command::new(env!("CARGO_BIN_EXE_egypt"))
+        .args(["-l", "inf", "999999", "1000000"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn egypt");
+    let mut first = String::new();
+    BufReader::new(child.stdout.take().unwrap()).read_line(&mut first).unwrap();
+    assert_eq!(first, "1\t2\n");
+    let out = child.wait_with_output().unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(out.status.success() && !stderr.contains("panicked"), "{:?} {}", out.status, stderr);
 }
 
 #[test]

@@ -1,6 +1,6 @@
 mod rpn;
 
-use crate::rpn::{_parse_rpn, parse_rpn};
+use crate::rpn::{_parse_rpn, eval_rpn, Enclosure};
 
 use std::io::{self, BufWriter, StdoutLock, Write};
 use std::ops::{Add, Sub, Div, Mul, SubAssign, Neg};
@@ -55,10 +55,14 @@ struct Args {
     #[clap(short, long, value_parser = parse_limit, default_value_t = 8)]
     limit: usize,
 
-    /// Precision in bits for irrational/transcendental constants (pi, e, phi, etc.)
-    /// Higher precision = more CF terms = more Egypt tuples
-    #[clap(short, long, value_parser, default_value_t = 256)]
-    precision: u32,
+    /// Precision in bits for irrational constants (pi, e, phi, etc.); only settled tuples are output
+    /// [default: 256, or 65536 as the cap of --tuples]
+    #[clap(short, long, value_parser)]
+    precision: Option<u32>,
+
+    /// Irrational input: double the precision from 64 bits until N tuples are settled
+    #[clap(short = 't', long, value_parser)]
+    tuples: Option<usize>,
 
     /// Pell equation mode: output (q, p, norm) for sqrt(D)/1 input
     /// Finds solutions to p² - D·q² = ±1
@@ -372,14 +376,13 @@ fn as_egyptian_fraction_descent(a: &Integer, b: &Integer, args: &Args) -> Vec<(I
     res
 }
 
-/// Egyptian fraction for irrationals: uses CF, sorts by fraction size
-/// No truncation - user controls precision, we output full CF expansion
-fn as_egyptian_fraction_irrational(a: &Integer, b: &Integer, args: &Args) -> Vec<(Integer, Integer, Integer, Integer)> {
+/// Egyptian fraction for irrationals: the settled CF tuples, sorted by fraction size
+fn as_egyptian_fraction_irrational(s: &Settled, args: &Args) -> Vec<(Integer, Integer, Integer, Integer)> {
     if args.descent {
-        return as_egyptian_fraction_descent(a, b, args);
+        let (a, b) = s.value.clone().into_numer_denom();
+        return as_egyptian_fraction_descent(&a, &b, args);
     }
-    let mut res = vec![];
-    as_egyptian_fraction_symbolic_for_irrational(&a, &b, args.reverse, &mut res);
+    let mut res = s.tuples.clone();
 
     // Sort by unit fraction size (large → small)
     sort_by_fraction_size(&mut res);
@@ -531,30 +534,148 @@ fn solve_pell(tuples: &[(Integer, Integer, Integer, Integer)], d: &Integer) -> V
     results
 }
 
-/// Check if RPN expression contains irrational/transcendental constants
-fn contains_irrational(s: &str) -> bool {
-    let lower = s.to_lowercase();
-    let trimmed = lower.trim();
-    lower.contains("pi") ||
-    lower.contains(" e ") || lower.starts_with("e ") || lower.ends_with(" e") || trimmed == "e" ||
-    lower.contains("phi") || lower.contains("sqrt2") || lower.contains("gamma") ||
-    lower.contains("sqrt")  // sqrt of non-perfect square
+fn abs_bounds(e: &Enclosure) -> Option<(Rational, Rational)> {
+    let (lo, hi) = match e {
+        Enclosure::Exact(r) => (r.clone(), r.clone()),
+        Enclosure::Interval(lo, hi) => (lo.clone(), hi.clone()),
+        Enclosure::Unknown => return None,
+    };
+    Some(if lo >= 0 {
+        (lo, hi)
+    } else if hi <= 0 {
+        (-hi, -lo)
+    } else {
+        let top = if Rational::from(-&lo) > hi { -lo } else { hi };
+        (Rational::new(), top)
+    })
 }
 
-/// Evaluate both RPN expressions as rationals and divide: (a/b) / (c/d) = ad / bc
-/// Returns (numerator, denominator, is_irrational)
-fn parse_rpn_auto(num_str: &str, den_str: &str, precision: u32) -> (Integer, Integer, bool) {
-    let is_irrational = contains_irrational(num_str) || contains_irrational(den_str);
-    let (num_a, den_a) = parse_rpn(num_str, precision);
-    let (num_b, den_b) = parse_rpn(den_str, precision);
-    let final_num = (num_a * &den_b).abs();
-    let final_den = (den_a * &num_b).abs();
-    if final_den.is_zero() {
+/// |numerator| / |denominator| of the two RPN expressions, as an exact value or an enclosure
+fn eval_input(num_str: &str, den_str: &str, precision: u32) -> Enclosure {
+    let (n, d) = (eval_rpn(num_str, precision), eval_rpn(den_str, precision));
+    if matches!(&d, Enclosure::Exact(r) if r.is_zero()) {
         eprintln!("Error: denominator evaluates to zero");
         std::process::exit(2);
     }
-    let gcd = final_num.clone().gcd(&final_den);
-    (final_num / &gcd, final_den / &gcd, is_irrational)
+    let (Some((nl, nh)), Some((dl, dh))) = (abs_bounds(&n), abs_bounds(&d)) else {
+        return Enclosure::Unknown;
+    };
+    if dl.is_zero() {
+        return Enclosure::Unknown;
+    }
+    let (lo, hi) = (nl / dh, nh / dl);
+    if lo == hi { Enclosure::Exact(lo) } else { Enclosure::Interval(lo, hi) }
+}
+
+/// Tuples of the CF prefix shared by every value in an enclosure
+#[derive(Clone, Debug)]
+struct Settled {
+    /// integer part, `complete` regular tuples, then possibly one partial tuple
+    tuples: Vec<(Integer, Integer, Integer, Integer)>,
+    complete: usize,
+    /// exact sum of `tuples` (a lower bound of the input)
+    value: Rational,
+    precision: u32,
+}
+
+/// Lockstep Euclid on both ends of [lo, hi]. A term is settled when both ends agree on it and
+/// neither ends there; the reals with a given CF prefix form an interval, so the whole enclosure
+/// shares it. The next term lies between the ends' values, so an even one still settles
+/// min(a_lo, a_hi) unit fractions of its tuple.
+fn settle(lo: &Rational, hi: &Rational, precision: u32, max_tuples: Option<usize>) -> Settled {
+    let (mut a, mut b) = lo.clone().into_numer_denom();
+    let (mut c, mut d) = hi.clone().into_numer_denom();
+    let mut cf: Vec<Integer> = vec![];
+    let partial = loop {
+        // --tuples N: stop once a_0..a_{2N} are settled
+        if max_tuples.is_some_and(|n| cf.len() > 2 * n) {
+            break Integer::new();
+        }
+        let (q1, r1) = a.div_rem_floor(b.clone());
+        let (q2, r2) = c.div_rem_floor(d.clone());
+        if q1 != q2 {
+            break q1.min(q2);
+        }
+        if r1.is_zero() || r2.is_zero() {
+            break q1;
+        }
+        cf.push(q1);
+        (a, b, c, d) = (b, r1, d, r2);
+    };
+    let mut tuples = vec![];
+    if let Some(a0) = cf.first() {
+        if *a0 > 0 {
+            tuples.push((a0.clone(), Integer::new(), Integer::new(), Integer::new()));
+        }
+    }
+    let m = cf.len();
+    let (mut hs, mut qs): (Vec<Integer>, Vec<Integer>) = (vec![], vec![]);
+    for i in 0..m {
+        let (h, q) = match i {
+            0 => (cf[0].clone(), Integer::from(1)),
+            1 => (Integer::from(&cf[1] * &hs[0]) + 1u32, cf[1].clone()),
+            _ => (Integer::from(&cf[i] * &hs[i - 1]) + &hs[i - 2], Integer::from(&cf[i] * &qs[i - 1]) + &qs[i - 2]),
+        };
+        hs.push(h);
+        qs.push(q);
+    }
+    let mut complete = 0;
+    for k in 1..=m / 2 {
+        if 2 * k < m {
+            tuples.push((qs[2 * k - 2].clone(), qs[2 * k - 1].clone(), Integer::from(1), cf[2 * k].clone()));
+            complete += 1;
+        }
+    }
+    // the tuples telescope to the last even convergent, or to a semiconvergent after a partial one
+    let value = if m == 0 {
+        Rational::new()
+    } else if m >= 2 && m % 2 == 0 && partial > 0 {
+        let h = Integer::from(&partial * &hs[m - 1]) + &hs[m - 2];
+        let q = Integer::from(&partial * &qs[m - 1]) + &qs[m - 2];
+        tuples.push((qs[m - 2].clone(), qs[m - 1].clone(), Integer::from(1), partial));
+        Rational::from((h, q))
+    } else {
+        let e = 2 * complete;
+        Rational::from((hs[e].clone(), qs[e].clone()))
+    };
+    Settled { tuples, complete, value, precision }
+}
+
+enum Input {
+    Rational(Integer, Integer),
+    Irrational(Settled),
+}
+
+const TUPLES_MAX_PRECISION: u32 = 1 << 16;
+
+/// Exact input, or the tuples settled at -p (with --tuples: at the first doubling that settles N)
+fn resolve_input(num_str: &str, den_str: &str, args: &Args) -> Input {
+    let cap = args.precision.unwrap_or(if args.tuples.is_some() { TUPLES_MAX_PRECISION } else { 256 });
+    let mut prec = if args.tuples.is_some() { cap.min(64) } else { cap };
+    loop {
+        let s = match eval_input(num_str, den_str, prec) {
+            Enclosure::Exact(r) => {
+                let (n, d) = r.into_numer_denom();
+                return Input::Rational(n, d);
+            }
+            Enclosure::Interval(lo, hi) => settle(&lo, &hi, prec, args.tuples),
+            Enclosure::Unknown => Settled { tuples: vec![], complete: 0, value: Rational::new(), precision: prec },
+        };
+        match args.tuples {
+            Some(n) if s.complete < n && prec < cap => prec = cap.min(prec.saturating_mul(2)),
+            _ => return Input::Irrational(s),
+        }
+    }
+}
+
+/// Warn when fewer tuples settled than asked for; true if so
+fn warn_unsettled(s: &Settled, args: &Args) -> bool {
+    let wanted = args.tuples.unwrap_or(1);
+    if s.complete >= wanted {
+        return false;
+    }
+    eprintln!("# only {} of {} tuples settled at {} bits (raise -p; the value may be rational)", s.complete, wanted, s.precision);
+    true
 }
 
 /// Calculate the smallest denominator a raw tuple produces (for sorting)
@@ -578,6 +699,23 @@ fn fmt_int(i: &Integer, hex: bool) -> String {
     if hex { format!("{:x}", i) } else { i.to_string() }
 }
 
+/// A closed stdout (e.g. `egypt ... | head`) ends the run quietly instead of panicking
+trait OrExit {
+    fn or_exit(self);
+}
+
+impl OrExit for io::Result<()> {
+    fn or_exit(self) {
+        if let Err(e) = self {
+            if e.kind() == io::ErrorKind::BrokenPipe {
+                std::process::exit(0);
+            }
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
 fn stdout_writer() -> BufWriter<StdoutLock<'static>> {
     BufWriter::with_capacity(1 << 20, io::stdout().lock())
 }
@@ -591,20 +729,25 @@ fn main() {
             if let Ok(line) = line {
                 let num_den = line.split("\t").take(2).collect::<Vec<&str>>();
                 if num_den.len() < 2 {
-                    writeln!(out, "expecting tab delimited numerator and denominator").unwrap();
+                    writeln!(out, "expecting tab delimited numerator and denominator").or_exit();
                     continue;
                 }
 
-                let (num, den, is_irrational) = parse_rpn_auto(num_den[0], num_den[1], args.precision);
-                let fractions = if is_irrational {
-                    as_egyptian_fraction_irrational(&num, &den, &args)
-                } else {
-                    as_egyptian_fraction(&num, &den, &args)
+                let (num, den, fractions) = match resolve_input(num_den[0], num_den[1], &args) {
+                    Input::Rational(num, den) => {
+                        let f = as_egyptian_fraction(&num, &den, &args);
+                        (num, den, f)
+                    }
+                    Input::Irrational(s) => {
+                        warn_unsettled(&s, &args);
+                        let (num, den) = s.value.clone().into_numer_denom();
+                        (num, den, as_egyptian_fraction_irrational(&s, &args))
+                    }
                 };
                 if !args.silent {
                     let hex = args.hex;
                     let mut gt0 = false;
-                    write!(out, "{}\t{}\t", fmt_int(&num, hex), fmt_int(&den, hex)).unwrap();
+                    write!(out, "{}\t{}\t", fmt_int(&num, hex), fmt_int(&den, hex)).or_exit();
                     for (i, (a, b, c, d)) in fractions.iter().enumerate() {
                         let is_natural = (args.raw && b.is_zero() && c.is_zero() && d.is_zero())
                             || (!args.raw && *b == Integer::from(1));
@@ -614,24 +757,24 @@ fn main() {
                             fmt_int(b, hex)
                         };
                         if i == 0 && is_natural {
-                            write!(out, "{}\t", fmt_int(a, hex)).unwrap();
+                            write!(out, "{}\t", fmt_int(a, hex)).or_exit();
                             gt0 = true;
                         } else if i == 0 {
-                            write!(out, "0\t{}", term).unwrap();
+                            write!(out, "0\t{}", term).or_exit();
                         } else if i == 1 && gt0 {
-                            write!(out, "{}", term).unwrap();
+                            write!(out, "{}", term).or_exit();
                         } else {
-                            write!(out, " {}", term).unwrap();
+                            write!(out, " {}", term).or_exit();
                         }
                     }
-                    writeln!(out).unwrap();
+                    writeln!(out).or_exit();
                 }
                 // one line per input, so a coprocess feeding stdin sees each answer at once
-                out.flush().unwrap();
+                out.flush().or_exit();
             }
         }
     } else {
-        let (num, den, is_irrational) = parse_rpn_auto(&args.numerator, &args.denominator, args.precision);
+        let input = resolve_input(&args.numerator, &args.denominator, &args);
 
         // Pell mode: extract D from "D sqrt" pattern
         if args.pell {
@@ -644,20 +787,27 @@ fn main() {
             let d = d.unwrap();
 
             // Get raw tuples (always use raw mode internally for Pell)
-            let mut res = vec![];
-            as_egyptian_fraction_symbolic_for_irrational(&num, &den, args.reverse, &mut res);
+            let mut res = match &input {
+                Input::Irrational(s) => s.tuples.clone(),
+                Input::Rational(num, den) => {
+                    let mut res = vec![];
+                    as_egyptian_fraction_symbolic_for_irrational(num, den, args.reverse, &mut res);
+                    res
+                }
+            };
             sort_by_fraction_size(&mut res);
 
             // Solve Pell equation
             let pell_results = solve_pell(&res, &d);
 
             if !args.silent {
-                println!("q\tp\tnorm");
+                let mut out = io::stdout().lock();
+                writeln!(out, "q\tp\tnorm").or_exit();
                 let mut found_fundamental = false;
                 let mut found_quasi = false;
 
                 for (q, p, norm) in pell_results {
-                    println!("{}\t{}\t{}", fmt_int(&q, args.hex), fmt_int(&p, args.hex), fmt_int(&norm, args.hex));
+                    writeln!(out, "{}\t{}\t{}", fmt_int(&q, args.hex), fmt_int(&p, args.hex), fmt_int(&norm, args.hex)).or_exit();
 
                     if !found_quasi && norm == Integer::from(-1) {
                         eprintln!("# Quasi-solution (norm=-1): p={}, q={}", p, q);
@@ -680,21 +830,27 @@ fn main() {
                 }
             }
         } else {
-            let fractions = if is_irrational {
-                as_egyptian_fraction_irrational(&num, &den, &args)
-            } else {
-                as_egyptian_fraction(&num, &den, &args)
+            let mut short = false;
+            let fractions = match &input {
+                Input::Rational(num, den) => as_egyptian_fraction(num, den, &args),
+                Input::Irrational(s) => {
+                    short = warn_unsettled(s, &args);
+                    as_egyptian_fraction_irrational(s, &args)
+                }
             };
             if !args.silent {
                 let (hex, mut out) = (args.hex, stdout_writer());
                 for (a, b, c, d) in fractions.iter() {
                     if args.raw {
-                        writeln!(out, "{}\t{}\t{}\t{}", fmt_int(a, hex), fmt_int(b, hex), fmt_int(c, hex), fmt_int(d, hex)).unwrap();
+                        writeln!(out, "{}\t{}\t{}\t{}", fmt_int(a, hex), fmt_int(b, hex), fmt_int(c, hex), fmt_int(d, hex)).or_exit();
                     } else {
-                        writeln!(out, "{}\t{}", fmt_int(a, hex), fmt_int(b, hex)).unwrap();
+                        writeln!(out, "{}\t{}", fmt_int(a, hex), fmt_int(b, hex)).or_exit();
                     }
                 }
-                out.flush().unwrap();
+                out.flush().or_exit();
+            }
+            if short {
+                std::process::exit(1);
             }
         }
     }
@@ -721,11 +877,15 @@ mod tests {
     /// Expansion must sum exactly to the input and use each unit fraction once
     fn check(cli: &[&str]) {
         let args = Args::parse_from(std::iter::once("egypt").chain(cli.iter().copied()));
-        let (num, den, irrational) = parse_rpn_auto(&args.numerator, &args.denominator, args.precision);
-        let fractions = if irrational {
-            as_egyptian_fraction_irrational(&num, &den, &args)
-        } else {
-            as_egyptian_fraction(&num, &den, &args)
+        let (num, den, fractions) = match resolve_input(&args.numerator, &args.denominator, &args) {
+            Input::Rational(num, den) => {
+                let f = as_egyptian_fraction(&num, &den, &args);
+                (num, den, f)
+            }
+            Input::Irrational(s) => {
+                let (num, den) = s.value.clone().into_numer_denom();
+                (num, den, as_egyptian_fraction_irrational(&s, &args))
+            }
         };
         let mut sum = Rational::new();
         let mut seen = HashSet::new();
@@ -760,10 +920,9 @@ mod tests {
 
     #[test]
     fn big_literals_parse_exactly() {
-        let (n, d, irrational) = parse_rpn_auto(
-            "162259276829213363391578010288127", "170141183460469231731687303715884105727", 64);
-        assert_eq!(n, Integer::from(2u32).pow(107u32) - 1u32);
-        assert_eq!(d, Integer::from(2u32).pow(127u32) - 1u32);
-        assert!(!irrational);
+        let e = eval_input("162259276829213363391578010288127", "170141183460469231731687303715884105727", 64);
+        let Enclosure::Exact(r) = e else { panic!("{:?}", e) };
+        assert_eq!(*r.numer(), Integer::from(2u32).pow(107u32) - 1u32);
+        assert_eq!(*r.denom(), Integer::from(2u32).pow(127u32) - 1u32);
     }
 }

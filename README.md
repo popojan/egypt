@@ -27,7 +27,8 @@ Options:
   -x, --hex                    Print integers in hexadecimal (decimal conversion dominates large outputs)
       --batch                  Batch mode (expects numerator and denominator on each line of stdin)
   -l, --limit <LIMIT>          Maximum number of terms for breaking large symbolic sums (`inf`: no bisection) [default: 8]
-  -p, --precision <PRECISION>  Precision in bits for irrational/transcendental constants (pi, e, phi, etc.) Higher precision = more CF terms = more Egypt tuples [default: 256]
+  -p, --precision <PRECISION>  Precision in bits for irrational constants (pi, e, phi, etc.); only settled tuples are output [default: 256, or 65536 as the cap of --tuples]
+  -t, --tuples <TUPLES>        Irrational input: double the precision from 64 bits until N tuples are settled
       --pell                   Pell equation mode: output (q, p, norm) for sqrt(D)/1 input Finds solutions to p² - D·q² = ±1
       --descent                Divisor-residue descent: fewer terms, much larger denominators (experimental, doc/divisor-descent.md)
   -h, --help                   Print help
@@ -148,11 +149,18 @@ $ egypt pi 4 --raw -p 64
 331698	364913	1	17
 6535219	6900132	1	2
 20335483	27235615	1	5
+156513558	183749173	1	1
 ```
 
 Each tuple `(u, v, i, j)` represents: `sum_{k=i}^{j} 1/((u-v+vk)(u+vk))`
 
-The `-p` flag controls precision in bits (default 256). Higher precision = more CF terms = more tuples.
+Irrational values are evaluated as intervals with outward rounding at `-p` bits (default 256), and
+only the CF prefix shared by the whole interval is output, so every tuple is a true tuple of the
+constant. The last one may be partial: when an even quotient a_{2k} is only bounded, its first
+min(a_lo, a_hi) unit fractions are still certain. A tuple costs about 7 bits (Lévy's constant):
+`pi` settles 37 tuples at 256 bits. `--tuples N` (`-t N`) doubles the precision from 64 bits until N
+tuples settle, capped by `-p` (default 65536). A value that never settles, such as
+`2 sqrt 2 sqrt *` = 2, is reported on stderr with exit status 1.
 
 ```bash
 # Golden ratio
@@ -164,8 +172,8 @@ $ egypt phi 1 --raw -p 64 | head -5
 3	5	1	1
 ```
 
-Note: For irrationals, output represents a finite-precision rational approximation.
-Early tuples are stable convergents of the true constant; later ones may diverge.
+The tuples sum to a lower bound of the constant (an even convergent or semiconvergent); `--batch`
+prints that sum in its first two columns.
 
 ### Pell Equation Solver
 
