@@ -699,6 +699,23 @@ fn fmt_int(i: &Integer, hex: bool) -> String {
     if hex { format!("{:x}", i) } else { i.to_string() }
 }
 
+/// A closed stdout (e.g. `egypt ... | head`) ends the run quietly instead of panicking
+trait OrExit {
+    fn or_exit(self);
+}
+
+impl OrExit for io::Result<()> {
+    fn or_exit(self) {
+        if let Err(e) = self {
+            if e.kind() == io::ErrorKind::BrokenPipe {
+                std::process::exit(0);
+            }
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
 fn stdout_writer() -> BufWriter<StdoutLock<'static>> {
     BufWriter::with_capacity(1 << 20, io::stdout().lock())
 }
@@ -712,7 +729,7 @@ fn main() {
             if let Ok(line) = line {
                 let num_den = line.split("\t").take(2).collect::<Vec<&str>>();
                 if num_den.len() < 2 {
-                    writeln!(out, "expecting tab delimited numerator and denominator").unwrap();
+                    writeln!(out, "expecting tab delimited numerator and denominator").or_exit();
                     continue;
                 }
 
@@ -730,7 +747,7 @@ fn main() {
                 if !args.silent {
                     let hex = args.hex;
                     let mut gt0 = false;
-                    write!(out, "{}\t{}\t", fmt_int(&num, hex), fmt_int(&den, hex)).unwrap();
+                    write!(out, "{}\t{}\t", fmt_int(&num, hex), fmt_int(&den, hex)).or_exit();
                     for (i, (a, b, c, d)) in fractions.iter().enumerate() {
                         let is_natural = (args.raw && b.is_zero() && c.is_zero() && d.is_zero())
                             || (!args.raw && *b == Integer::from(1));
@@ -740,20 +757,20 @@ fn main() {
                             fmt_int(b, hex)
                         };
                         if i == 0 && is_natural {
-                            write!(out, "{}\t", fmt_int(a, hex)).unwrap();
+                            write!(out, "{}\t", fmt_int(a, hex)).or_exit();
                             gt0 = true;
                         } else if i == 0 {
-                            write!(out, "0\t{}", term).unwrap();
+                            write!(out, "0\t{}", term).or_exit();
                         } else if i == 1 && gt0 {
-                            write!(out, "{}", term).unwrap();
+                            write!(out, "{}", term).or_exit();
                         } else {
-                            write!(out, " {}", term).unwrap();
+                            write!(out, " {}", term).or_exit();
                         }
                     }
-                    writeln!(out).unwrap();
+                    writeln!(out).or_exit();
                 }
                 // one line per input, so a coprocess feeding stdin sees each answer at once
-                out.flush().unwrap();
+                out.flush().or_exit();
             }
         }
     } else {
@@ -784,12 +801,13 @@ fn main() {
             let pell_results = solve_pell(&res, &d);
 
             if !args.silent {
-                println!("q\tp\tnorm");
+                let mut out = io::stdout().lock();
+                writeln!(out, "q\tp\tnorm").or_exit();
                 let mut found_fundamental = false;
                 let mut found_quasi = false;
 
                 for (q, p, norm) in pell_results {
-                    println!("{}\t{}\t{}", fmt_int(&q, args.hex), fmt_int(&p, args.hex), fmt_int(&norm, args.hex));
+                    writeln!(out, "{}\t{}\t{}", fmt_int(&q, args.hex), fmt_int(&p, args.hex), fmt_int(&norm, args.hex)).or_exit();
 
                     if !found_quasi && norm == Integer::from(-1) {
                         eprintln!("# Quasi-solution (norm=-1): p={}, q={}", p, q);
@@ -824,12 +842,12 @@ fn main() {
                 let (hex, mut out) = (args.hex, stdout_writer());
                 for (a, b, c, d) in fractions.iter() {
                     if args.raw {
-                        writeln!(out, "{}\t{}\t{}\t{}", fmt_int(a, hex), fmt_int(b, hex), fmt_int(c, hex), fmt_int(d, hex)).unwrap();
+                        writeln!(out, "{}\t{}\t{}\t{}", fmt_int(a, hex), fmt_int(b, hex), fmt_int(c, hex), fmt_int(d, hex)).or_exit();
                     } else {
-                        writeln!(out, "{}\t{}", fmt_int(a, hex), fmt_int(b, hex)).unwrap();
+                        writeln!(out, "{}\t{}", fmt_int(a, hex), fmt_int(b, hex)).or_exit();
                     }
                 }
-                out.flush().unwrap();
+                out.flush().or_exit();
             }
             if short {
                 std::process::exit(1);

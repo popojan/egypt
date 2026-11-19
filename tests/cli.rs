@@ -243,6 +243,24 @@ fn batch_switch() {
 }
 
 #[test]
+fn closed_stdout_exits_quietly() {
+    use std::io::{BufRead, BufReader};
+    // ~1M lines, far beyond the pipe buffer, so egypt is still writing when the reader leaves
+    let mut child = Command::new(env!("CARGO_BIN_EXE_egypt"))
+        .args(["-l", "inf", "999999", "1000000"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn egypt");
+    let mut first = String::new();
+    BufReader::new(child.stdout.take().unwrap()).read_line(&mut first).unwrap();
+    assert_eq!(first, "1\t2\n");
+    let out = child.wait_with_output().unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert!(out.status.success() && !stderr.contains("panicked"), "{:?} {}", out.status, stderr);
+}
+
+#[test]
 fn silent_and_errors() {
     let run = egypt(&["-s", "7", "19"]);
     assert_eq!((run.code, run.stdout.as_str()), (0, ""));
